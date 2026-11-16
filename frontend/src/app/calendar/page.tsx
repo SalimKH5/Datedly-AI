@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Check, Clock, Cpu, Eye, Loader2, Pencil, RotateCcw, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowUpRight, Check, Clock, Cpu, Eye, Globe, Loader2, Lock, Pencil, RotateCcw, Save, Send, Trash2, X } from "lucide-react";
 import { api, type Calendar, type Entry } from "@/lib/api";
 import { themeStyle } from "@/lib/themes";
 import { contentLang, useT, type Lang } from "@/lib/i18n";
@@ -13,6 +13,9 @@ import { GenerationProgress } from "@/components/GenerationProgress";
 import { CalendarEditor } from "@/components/editor/CalendarEditor";
 import { ConfirmDialog } from "@/components/editor/ui";
 import { FLAGS, setFlag } from "@/lib/flags";
+import { PublishDialog } from "@/components/editor/PublishDialog";
+import { isLockedForVisitors } from "@/lib/schedule";
+import { useNow } from "@/lib/useNow";
 
 function formatDate(iso: string, opts: Intl.DateTimeFormatOptions, locale: string) {
   try {
@@ -76,6 +79,16 @@ function Preview({ cal, openIndex, setOpenIndex }: { cal: Calendar; openIndex: n
   const locale = lang === "fr" ? "fr-FR" : "en-US";
   const gen = cal.generation;
   const open = cal.entries.find((e) => e.index === openIndex) ?? null;
+  const now = useNow();
+  const demo = cal.publication?.demo ?? null;
+  const locked = (e: Entry) => !!now && isLockedForVisitors(e.index, e.date, cal.schedule, demo, now);
+  const opensAt = (e: Entry) => {
+    if (demo) {
+      const at = new Date(new Date(demo.start).getTime() + (e.index - 1) * demo.every_minutes * 60_000);
+      return at.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+    }
+    return `${formatDate(e.date, { day: "numeric", month: "short" }, locale)} · ${cal.schedule.unlock_time}`;
+  };
 
   // Group entries by the plan's sections; entries outside any section go last.
   const sections = [...(gen?.sections ?? [])].sort((a, b) => a.from - b.from);
@@ -92,6 +105,9 @@ function Preview({ cal, openIndex, setOpenIndex }: { cal: Calendar; openIndex: n
 
   return (
     <>
+      <p className="mb-5 flex w-fit items-center gap-2 rounded-full border border-line bg-black/20 px-3.5 py-1.5 text-xs text-muted">
+        <Eye size={14} className="text-accent-2" /> {t("pub.authorView")}
+      </p>
       {cal.description && <p className="max-w-3xl text-lg text-muted">{cal.description}</p>}
       <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted">
         {cal.entries.length > 0 && (
@@ -133,12 +149,17 @@ function Preview({ cal, openIndex, setOpenIndex }: { cal: Calendar; openIndex: n
               </h2>
             )}
             <ol className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {g.entries.map((e) => (
+              {g.entries.map((e) => {
+                const isLocked = locked(e);
+                return (
                 <li key={e.id}>
                   <button
                     type="button"
                     onClick={() => setOpenIndex(e.index)}
-                    className="glass flex h-40 w-full flex-col justify-between rounded-3xl p-5 text-left transition hover:-translate-y-0.5 hover:border-accent/50"
+                    title={isLocked ? t("pub.locked") : undefined}
+                    className={`glass flex h-40 w-full flex-col justify-between rounded-3xl p-5 text-left transition hover:-translate-y-0.5 hover:border-accent/50 ${
+                      isLocked ? "border-dashed" : ""
+                    }`}
                   >
                     <span className="flex items-start justify-between gap-2">
                       <span className="text-4xl font-extralight tabular-nums text-accent-2">{e.index}</span>
@@ -148,13 +169,20 @@ function Preview({ cal, openIndex, setOpenIndex }: { cal: Calendar; openIndex: n
                     </span>
                     <span>
                       <span className="line-clamp-2 font-medium leading-snug">{e.title}</span>
-                      <span className="mt-1 block text-xs text-faint">
-                        {formatDate(e.date, { weekday: "short", day: "numeric", month: "short" }, locale)}
+                      <span className="mt-1 flex items-center gap-1.5 text-xs text-faint">
+                        {isLocked ? (
+                          <>
+                            <Lock size={11} className="text-accent-2" /> {t("pub.opens", { when: opensAt(e) })}
+                          </>
+                        ) : (
+                          formatDate(e.date, { weekday: "short", day: "numeric", month: "short" }, locale)
+                        )}
                       </span>
                     </span>
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ol>
           </section>
         ))}
@@ -188,7 +216,7 @@ function CalendarView() {
   const [openIndex, setOpenIndex] = useState<number | null>(() => Number(params.get("entry")) || null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"regen" | "delete" | "leave" | null>(null);
+  const [dialog, setDialog] = useState<"regen" | "delete" | "leave" | "publish" | "unpublish" | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
 
   const load = useCallback(
@@ -310,7 +338,7 @@ function CalendarView() {
       </header>
 
       {/* Toolbar: save state + actions */}
-      <div className="glass sticky top-3 z-30 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-3xl px-4 py-3">
+      <div className="glass-blur sticky top-3 z-30 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-3xl px-4 py-3">
         <p className="flex items-center gap-2 text-sm" role="status" aria-live="polite">
           {saveState === "saving" ? (
             <>
@@ -329,6 +357,31 @@ function CalendarView() {
           )}
         </p>
         <div className="flex flex-wrap items-center gap-2">
+          {draft.status === "published" ? (
+            <>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-ok/50 px-3 py-1 text-xs text-ok">
+                <Globe size={13} /> {t("pub.published")}
+                {draft.publication?.demo && <span className="text-warn">· {t("pub.demoBadge")}</span>}
+              </span>
+              <Link
+                href={`/c?slug=${draft.slug}`}
+                className="inline-flex items-center gap-1.5 rounded-2xl border border-line px-3.5 py-2 text-sm hover:bg-surface-strong"
+              >
+                {t("pub.view")} <ArrowUpRight size={15} />
+              </Link>
+              <button type="button" onClick={() => setDialog("unpublish")} className="rounded-2xl px-3 py-2 text-sm text-muted hover:text-ink">
+                {t("pub.unpublish")}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDialog("publish")}
+              className="inline-flex items-center gap-2 rounded-2xl border border-accent/60 bg-accent/15 px-3.5 py-2 text-sm font-medium hover:bg-accent/25"
+            >
+              <Send size={15} /> {t("pub.publish")}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setDialog("regen")}
@@ -404,6 +457,36 @@ function CalendarView() {
               router.push("/");
             } catch (e) {
               setDialog(null);
+              setSaveError((e as Error).message);
+              setSaveState("error");
+            }
+          }}
+        />
+      )}
+      {dialog === "publish" && (
+        <PublishDialog
+          cal={draft}
+          dirty={dirty}
+          onClose={() => setDialog(null)}
+          onPublished={(c) => {
+            setSaved(c);
+            setDraft(c);
+          }}
+        />
+      )}
+      {dialog === "unpublish" && (
+        <ConfirmDialog
+          title={t("pub.unpublishTitle")}
+          body={t("pub.unpublishBody")}
+          confirmLabel={t("pub.unpublish")}
+          onCancel={() => setDialog(null)}
+          onConfirm={async () => {
+            setDialog(null);
+            try {
+              const c = await api.unpublish(draft.id);
+              setSaved(c);
+              setDraft(c);
+            } catch (e) {
               setSaveError((e as Error).message);
               setSaveState("error");
             }

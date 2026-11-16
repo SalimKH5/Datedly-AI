@@ -6,6 +6,7 @@ export const THEMES: Record<string, { accent: string; soft: string; label: strin
   ocean: { accent: "#3b82f6", soft: "#93c5fd", label: "Ocean" },
   candy: { accent: "#ec4899", soft: "#f9a8d4", label: "Candy" },
   mono: { accent: "#94a3b8", soft: "#e2e8f0", label: "Mono" },
+  arcade: { accent: "#ff7a1a", soft: "#ffb066", label: "Arcade" },
 };
 
 export function themeStyle(theme: string): React.CSSProperties {

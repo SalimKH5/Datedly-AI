@@ -212,11 +212,30 @@ pub struct NewCalendar {
     pub entry_count: u32,
 }
 
+/// "é" -> "e", "œ" -> "oe"... so French titles give readable addresses.
+fn fold_accent(c: char) -> Vec<char> {
+    let s: &str = match c {
+        'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => "a",
+        'ç' => "c",
+        'è' | 'é' | 'ê' | 'ë' => "e",
+        'ì' | 'í' | 'î' | 'ï' => "i",
+        'ñ' => "n",
+        'ò' | 'ó' | 'ô' | 'õ' | 'ö' => "o",
+        'ù' | 'ú' | 'û' | 'ü' => "u",
+        'ý' | 'ÿ' => "y",
+        'œ' => "oe",
+        'æ' => "ae",
+        'ß' => "ss",
+        _ => return vec![c],
+    };
+    s.chars().collect()
+}
+
 /// Turns a title into a URL-safe slug.
 pub fn slugify(s: &str) -> String {
     let mut out = String::new();
     let mut dash = false;
-    for ch in s.to_lowercase().chars() {
+    for ch in s.to_lowercase().chars().flat_map(fold_accent) {
         if ch.is_ascii_alphanumeric() {
             out.push(ch);
             dash = false;
@@ -241,6 +260,7 @@ mod tests {
     fn slugify_works() {
         assert_eq!(slugify("24-Day MMA Advent!"), "24-day-mma-advent");
         assert_eq!(slugify("  ***  "), "calendar");
+        assert_eq!(slugify("Noël : les bases avancées"), "noel-les-bases-avancees");
     }
 
     #[test]

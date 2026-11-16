@@ -228,8 +228,11 @@ export const GUIDE: Record<Lang, GuideStep[]> = {
       tip: "Nothing is stored until you save. “Regenerate all” rewrites the whole calendar from your original idea.",
     },
     {
-      title: "Publish (coming next)",
-      body: "Soon you will publish the calendar: each entry unlocks on its date, checked by the server, so visitors can never read tomorrow's surprise today.",
+      title: "Publish",
+      body: "In the calendar, click Publish. Choose “Follow the calendar dates” (each entry opens on its date, at the unlock time) or “Demo mode” (one entry every few minutes, to show it live). Open the public page to see what visitors see: open entries, today's entry, and locked ones with their opening time.",
+      tip: "To put it online: send the project to GitHub, and once only add the DATEDLY_MASTER_KEY secret (the content of data/master.key). A GitHub robot then opens each entry on time.",
+      href: "/#calendars",
+      cta: "Choose a calendar",
     },
   ],
   fr: [
@@ -277,8 +280,11 @@ export const GUIDE: Record<Lang, GuideStep[]> = {
       tip: "Rien n'est gardé avant l'enregistrement. « Tout régénérer » réécrit tout le calendrier à partir de votre idée de départ.",
     },
     {
-      title: "Publier (bientôt)",
-      body: "Bientôt, vous publierez le calendrier : chaque case s'ouvrira à sa date, vérifiée par le serveur, pour que personne ne lise la surprise de demain dès aujourd'hui.",
+      title: "Publier",
+      body: "Dans le calendrier, cliquez sur Publier. Choisissez « Suivre les dates du calendrier » (chaque case s'ouvre à sa date, à l'heure d'ouverture) ou « Mode démo » (une case toutes les quelques minutes, pour une démonstration). Ouvrez la page publique pour voir ce que voient les visiteurs : cases ouvertes, case du jour, et cases verrouillées avec leur heure d'ouverture.",
+      tip: "Pour la mettre en ligne : envoyez le projet sur GitHub et, une seule fois, ajoutez le secret DATEDLY_MASTER_KEY (le contenu de data/master.key). Un robot GitHub ouvre ensuite chaque case à l'heure.",
+      href: "/#calendars",
+      cta: "Choisir un calendrier",
     },
   ],
 };

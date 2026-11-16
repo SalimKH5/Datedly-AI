@@ -88,7 +88,7 @@ export default function ToolkitPage() {
   const features = [
     { tag: "kit.tag.describe", h: "kit.describe.h", p: "kit.describe.p", cta: "kit.describe.cta", href: "/#create", Art: ArtDescribe },
     { tag: "kit.tag.refine", h: "kit.refine.h", p: "kit.refine.p", cta: "kit.refine.cta", href: latest ? `/calendar?id=${latest}&mode=edit` : "/#calendars", Art: ArtRefine },
-    { tag: "kit.tag.publish", h: "kit.publish.h", p: "kit.publish.p", cta: "kit.publish.cta", href: null, Art: ArtPublish },
+    { tag: "kit.tag.publish", h: "kit.publish.h", p: "kit.publish.p", cta: "kit.publish.cta", href: latest ? `/calendar?id=${latest}` : "/#calendars", Art: ArtPublish },
   ] as const;
 
   return (

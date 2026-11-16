@@ -90,8 +90,39 @@ export interface Calendar {
     audience: string;
     tone: string;
   } | null;
+  publication: { published_at: string; demo: { start: string; every_minutes: number } | null } | null;
   created_at: string;
   updated_at: string;
+}
+
+/** What a visitor receives: locked entries carry only their number and time. */
+export interface PublicEntry {
+  index: number;
+  date: string;
+  unlock_at: string;
+  unlocked: boolean;
+  content?: { title: string; content_type: string; blocks: Block[] };
+}
+
+export interface PublicCalendar {
+  slug: string;
+  title: string;
+  description: string;
+  theme: string;
+  language: string;
+  timezone: string;
+  demo: boolean;
+  generated_at: string;
+  entry_count: number;
+  unlocked_count: number;
+  next_unlock_at: string | null;
+  entries: PublicEntry[];
+}
+
+export interface PublishResult {
+  calendar: Calendar;
+  bundle: string;
+  key: { source: "env" } | { source: "file"; path: string; created: boolean } | null;
 }
 
 export type Stage = "understanding" | "planning" | "writing" | "validating" | "saving" | "done";
@@ -166,6 +197,13 @@ export const api = {
   saveCalendar: (c: Calendar) =>
     request<Calendar>(`/api/calendars/${encodeURIComponent(c.id)}`, { method: "PUT", body: JSON.stringify(c) }),
   deleteCalendar: (id: string) => request<void>(`/api/calendars/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  publish: (id: string, demoEveryMinutes?: number) =>
+    request<PublishResult>(`/api/calendars/${encodeURIComponent(id)}/publish`, {
+      method: "POST",
+      body: JSON.stringify(demoEveryMinutes ? { demo_every_minutes: demoEveryMinutes } : {}),
+    }),
+  unpublish: (id: string) => request<Calendar>(`/api/calendars/${encodeURIComponent(id)}/unpublish`, { method: "POST" }),
+  publicCalendar: (slug: string) => request<PublicCalendar>(`/api/public/${encodeURIComponent(slug)}`),
   regenerateCalendar: (id: string) =>
     request<{ job_id: string; model: string }>(`/api/calendars/${encodeURIComponent(id)}/regenerate`, { method: "POST" }),
   regenerateEntry: (id: string, entry: Entry, instruction: string) =>

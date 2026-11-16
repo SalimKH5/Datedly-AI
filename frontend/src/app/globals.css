@@ -42,25 +42,91 @@ html {
 
 body {
   background-color: var(--bg);
-  /* Night-sky glow inspired by the reference design */
+  color: var(--text);
+}
+
+/* Night-sky glow, painted once on its own fixed layer.
+   (background-attachment: fixed + blur on every card made scrolling
+   stutter or freeze on some machines.) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background-image:
     radial-gradient(1200px 600px at 85% 110%, rgb(124 58 237 / 0.28), transparent 60%),
     radial-gradient(900px 500px at 0% 0%, rgb(76 29 149 / 0.25), transparent 60%),
     linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
-  background-attachment: fixed;
-  color: var(--text);
 }
 
+/* Cards: tinted surface, no live blur (cheap to scroll). */
 .glass {
-  background: var(--surface);
+  background: rgb(22 18 52 / 0.55);
   border: 1px solid var(--border);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+}
+
+/* Only for elements that float over content (sticky bars, dialogs). */
+.glass-blur {
+  background: rgb(18 15 46 / 0.82);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 :focus-visible {
   outline: 2px solid var(--accent-2);
   outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------ Arcade theme */
+
+.arcade {
+  font-family: var(--font-vt323), ui-monospace, monospace;
+  font-size: 1.2rem;
+}
+.arcade .pixel {
+  font-family: var(--font-press-start), ui-monospace, monospace;
+  letter-spacing: 0.04em;
+}
+/* CRT scanlines over the whole page, very light. */
+.arcade::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.18) 0 1px, transparent 1px 3px);
+  mix-blend-mode: multiply;
+}
+.pixel-box {
+  border: 3px solid var(--accent);
+  box-shadow:
+    0 0 0 3px rgb(0 0 0 / 0.6),
+    6px 6px 0 0 rgb(0 0 0 / 0.45);
+  border-radius: 4px;
+}
+.pixel-box-muted {
+  border: 3px solid rgb(255 255 255 / 0.12);
+  box-shadow: 4px 4px 0 0 rgb(0 0 0 / 0.45);
+  border-radius: 4px;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+@keyframes sleigh {
+  from { transform: translateX(-20vw); }
+  to { transform: translateX(120vw); }
+}
+@keyframes nudge {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+.animate-nudge {
+  animation: nudge 0.25s ease-in-out 2;
 }
 
 @media (prefers-reduced-motion: reduce) {

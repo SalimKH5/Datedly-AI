@@ -14,6 +14,8 @@ import { CalendarsPanel } from "@/components/CalendarsPanel";
 import { GettingStarted } from "@/components/GettingStarted";
 import { api, ApiError, type AiStatus, type CalendarSummary } from "@/lib/api";
 import { useT, type Key } from "@/lib/i18n";
+import { SITE_MODE } from "@/lib/publicData";
+import { PublicHome } from "@/components/public/PublicHome";
 
 type Loaded =
   | { ai: AiStatus; calendars: CalendarSummary[]; runningJob: string | null }
@@ -143,6 +145,8 @@ function Studio() {
 }
 
 export default function Home() {
+  // On GitHub Pages the home page lists published calendars; the studio is local.
+  if (SITE_MODE === "public") return <PublicHome />;
   return (
     <Suspense>
       <Studio />

@@ -17,7 +17,7 @@ export function Sidebar() {
   return (
     <nav
       aria-label="Main"
-      className="glass fixed bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-2 rounded-3xl p-2
+      className="glass-blur fixed bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-2 rounded-3xl p-2
                  lg:sticky lg:top-6 lg:left-auto lg:bottom-auto lg:h-[calc(100vh-3rem)] lg:translate-x-0 lg:flex-col lg:rounded-[2rem] lg:p-3"
     >
       <div className="hidden items-center justify-center gap-1.5 pb-4 pt-1 lg:flex" aria-hidden>

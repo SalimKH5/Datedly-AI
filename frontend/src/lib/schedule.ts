@@ -54,3 +54,30 @@ export function moveEntry(entries: Entry[], from: number, to: number): Entry[] {
   next.splice(to, 0, m);
   return next.map((e, i) => ({ ...e, index: i + 1, date: slots[i] }));
 }
+
+/** "YYYY-MM-DD HH:MM" right now in a time zone (to compare with an entry's date + unlock time). */
+export function nowInZone(timeZone: string, now: Date = new Date()): string {
+  try {
+    // sv-SE formats as "2026-12-01 08:30".
+    return new Intl.DateTimeFormat("sv-SE", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })
+      .format(now)
+      .replace(",", "");
+  } catch {
+    return now.toISOString().slice(0, 16).replace("T", " ");
+  }
+}
+
+/** Is this entry still closed for visitors? Mirrors the server rule (the server stays the authority). */
+export function isLockedForVisitors(
+  index: number,
+  date: string,
+  schedule: Schedule,
+  demo: { start: string; every_minutes: number } | null | undefined,
+  now: Date,
+): boolean {
+  if (demo) {
+    const at = new Date(demo.start).getTime() + (index - 1) * Math.max(1, demo.every_minutes) * 60_000;
+    return now.getTime() < at;
+  }
+  return nowInZone(schedule.timezone, now) < `${date} ${schedule.unlock_time}`;
+}

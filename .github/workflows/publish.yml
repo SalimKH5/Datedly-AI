@@ -1,0 +1,102 @@
+name: Publish calendars
+
+# The "robot" of Datedly AI.
+# - Encrypted calendars live in published/*.enc.json (unreadable without the key).
+# - Every 5 minutes, datedly-publish decides WITH THE SERVER CLOCK which entries
+#   are unlocked, decrypts only those, and writes the public JSON.
+# - The static site is rebuilt and deployed only when something changed.
+#
+# Setup (once): Settings > Pages > Source: GitHub Actions
+#               Settings > Secrets and variables > Actions > DATEDLY_MASTER_KEY
+#               (content of data/master.key on the studio computer).
+# GitHub limits: cron runs in UTC, only on the default branch, can start several
+# minutes late under load, and is paused after 60 days without repository activity.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Deploy even if nothing changed"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Open the entries whose time has come
+        env:
+          DATEDLY_MASTER_KEY: ${{ secrets.DATEDLY_MASTER_KEY }}
+        run: cargo run --release --quiet --manifest-path backend/Cargo.toml --bin datedly-publish -- --input published --out frontend/public/data
+
+      - name: Anything new since the last deployment?
+        id: diff
+        run: |
+          new=$(cat frontend/public/data/state.txt)
+          live=$(curl -fsSL "${{ steps.pages.outputs.base_url }}/data/state.txt" 2>/dev/null || echo none)
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$live" = "$new" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "Nothing new to publish."
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "${{ inputs.force }}" != "true" ] && [ "$live" = "$new" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "Nothing new to publish."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.diff.outputs.changed == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build the public site
+        if: steps.diff.outputs.changed == 'true'
+        working-directory: frontend
+        env:
+          STATIC_EXPORT: "1"
+          NEXT_PUBLIC_SITE_MODE: public
+          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+        run: |
+          npm ci
+          npm run build
+          touch out/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.diff.outputs.changed == 'true'
+        with:
+          path: frontend/out
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
