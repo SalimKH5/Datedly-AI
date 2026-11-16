@@ -7,7 +7,14 @@ use crate::models::{Interval, Schedule};
 
 /// Date of the n-th entry (0-based) for a schedule.
 pub fn entry_date(schedule: &Schedule, n: u32) -> NaiveDate {
+    if schedule.interval == Interval::Monthly {
+        return schedule
+            .start_date
+            .checked_add_months(chrono::Months::new(n))
+            .unwrap_or(schedule.start_date);
+    }
     let step = match schedule.interval {
+        Interval::Monthly => unreachable!(),
         Interval::Daily => 1,
         Interval::Weekly => 7,
         Interval::EveryNDays { days } => days.max(1) as i64,
@@ -54,6 +61,8 @@ mod tests {
         assert_eq!(entry_date(&d, 23), NaiveDate::from_ymd_opt(2026, 12, 24).unwrap());
         let w = sched(Interval::Weekly);
         assert_eq!(entry_date(&w, 2), NaiveDate::from_ymd_opt(2026, 12, 15).unwrap());
+        let m = sched(Interval::Monthly);
+        assert_eq!(entry_date(&m, 11), NaiveDate::from_ymd_opt(2027, 11, 1).unwrap());
     }
 
     #[test]

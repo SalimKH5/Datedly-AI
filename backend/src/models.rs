@@ -21,6 +21,7 @@ pub enum CalendarStatus {
 pub enum Interval {
     Daily,
     Weekly,
+    Monthly,
     /// Every `days` days.
     EveryNDays { days: u32 },
 }
@@ -117,8 +118,28 @@ pub struct Calendar {
     pub status: CalendarStatus,
     #[serde(default)]
     pub entries: Vec<Entry>,
+    /// How the calendar was produced (model, duration, validation notes).
+    #[serde(default)]
+    pub generation: Option<GenerationReport>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct GenerationReport {
+    pub provider: String,
+    pub model: String,
+    pub duration_secs: u64,
+    /// Non-blocking findings from validation (e.g. similar titles).
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    /// AI planning notes: sections of the progression.
+    #[serde(default)]
+    pub sections: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub audience: String,
+    #[serde(default)]
+    pub tone: String,
 }
 
 fn default_language() -> String {

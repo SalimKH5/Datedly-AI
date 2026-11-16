@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use axum::http::{HeaderValue, Method};
 use datedly::{
     api::{router, AppState},
+    jobs::Jobs,
     store::Store,
 };
 use tower_http::cors::CorsLayer;
@@ -24,7 +25,7 @@ async fn main() {
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers([axum::http::header::CONTENT_TYPE]);
 
-    let app = router(AppState { store }).layer(cors);
+    let app = router(AppState { store, jobs: Jobs::default() }).layer(cors);
 
     // The studio API is local-only: it binds to loopback, never to the network.
     let addr = SocketAddr::from(([127, 0, 0, 1], port));

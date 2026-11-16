@@ -1,5 +1,7 @@
 pub mod ai;
 pub mod api;
+pub mod generate;
+pub mod jobs;
 pub mod models;
 pub mod schedule;
 pub mod store;

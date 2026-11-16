@@ -3,11 +3,14 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use super::{AiError, AiProvider, ModelInfo};
+use super::{parse_json_loose, AiError, AiProvider, JsonRequest, ModelInfo};
+use serde_json::json;
 
 pub struct Ollama {
     endpoint: String,
     http: reqwest::Client,
+    /// Separate client for generation: local models can take minutes.
+    gen_http: reqwest::Client,
 }
 
 impl Ollama {
@@ -17,8 +20,34 @@ impl Ollama {
             .timeout(Duration::from_secs(10))
             .build()
             .expect("http client");
-        Ollama { endpoint: endpoint.trim_end_matches('/').to_string(), http }
+        let gen_http = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(GENERATION_TIMEOUT_SECS))
+            .build()
+            .expect("http client");
+        Ollama { endpoint: endpoint.trim_end_matches('/').to_string(), http, gen_http }
     }
+
+    fn map_err(&self, e: reqwest::Error) -> AiError {
+        if e.is_timeout() {
+            AiError::Timeout
+        } else if e.is_connect() {
+            AiError::Unreachable(self.endpoint.clone())
+        } else {
+            AiError::Provider(e.to_string())
+        }
+    }
+}
+
+pub const GENERATION_TIMEOUT_SECS: u64 = 300;
+
+#[derive(Deserialize)]
+struct ChatResponse {
+    message: ChatMessage,
+}
+#[derive(Deserialize)]
+struct ChatMessage {
+    content: String,
 }
 
 #[derive(Deserialize)]
@@ -80,6 +109,40 @@ impl AiProvider for Ollama {
             .collect();
         models.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(models)
+    }
+
+    async fn generate_json(&self, req: &JsonRequest) -> Result<serde_json::Value, AiError> {
+        let body = json!({
+            "model": req.model,
+            "stream": false,
+            // Thinking models (qwen3...) would otherwise spend minutes reasoning.
+            "think": false,
+            // Ollama constrains the output to this JSON schema.
+            "format": req.schema,
+            "options": { "temperature": req.temperature, "num_ctx": 8192 },
+            "messages": [
+                { "role": "system", "content": req.system },
+                { "role": "user", "content": req.prompt },
+            ],
+        });
+        let res = self
+            .gen_http
+            .post(format!("{}/api/chat", self.endpoint))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| self.map_err(e))?;
+        if !res.status().is_success() {
+            let status = res.status();
+            let text = res.text().await.unwrap_or_default();
+            let msg = serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v["error"].as_str().map(String::from))
+                .unwrap_or_else(|| format!("HTTP {status}"));
+            return Err(AiError::Provider(msg));
+        }
+        let chat: ChatResponse = res.json().await.map_err(|e| self.map_err(e))?;
+        parse_json_loose(&chat.message.content)
     }
 }
 

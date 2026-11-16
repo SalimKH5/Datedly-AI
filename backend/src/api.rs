@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use chrono::Utc;
@@ -14,6 +14,8 @@ use uuid::Uuid;
 
 use crate::{
     ai::{ollama::Ollama, AiProvider},
+    generate::{generate_calendar, GenerateRequest, Stage},
+    jobs::{JobStatus, Jobs},
     models::{slugify, Calendar, CalendarStatus, Entry, EntryStatus, NewCalendar},
     schedule::entry_date,
     store::{Settings, Store},
@@ -22,6 +24,7 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     pub store: Store,
+    pub jobs: Jobs,
 }
 
 pub struct ApiError(StatusCode, String);
@@ -49,6 +52,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/health", get(|| async { Json(json!({ "ok": true, "service": "datedly" })) }))
         .route("/api/ai/status", get(ai_status))
         .route("/api/settings", get(get_settings).put(put_settings))
+        .route("/api/generate", post(start_generation))
+        .route("/api/jobs/current", get(current_job))
+        .route("/api/jobs/{id}", get(get_job))
         .route("/api/calendars", get(list_calendars).post(create_calendar))
         .route(
             "/api/calendars/{id}",
@@ -139,6 +145,7 @@ async fn create_calendar(
         schedule: input.schedule,
         status: CalendarStatus::Draft,
         entries,
+        generation: None,
         created_at: now,
         updated_at: now,
     };
@@ -179,4 +186,75 @@ async fn delete_calendar(
     } else {
         Err(not_found())
     }
+}
+
+// ---------------------------------------------------------------- generation
+
+async fn start_generation(
+    State(s): State<AppState>,
+    Json(req): Json<GenerateRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    req.validate().map_err(|m| bad(&m))?;
+    let settings = s.store.settings().await;
+    let ollama = Ollama::new(&settings.ollama_endpoint);
+    let status = ollama.status().await;
+    if !status.available {
+        return Err(ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            status.error.unwrap_or_else(|| "Ollama is not reachable".into()),
+        ));
+    }
+    // Requested model > saved model > first installed model, if installed.
+    let model = req
+        .model
+        .clone()
+        .or(settings.model.clone())
+        .filter(|m| status.models.iter().any(|x| &x.name == m))
+        .or_else(|| status.models.first().map(|m| m.name.clone()))
+        .ok_or_else(|| bad("No text model is installed in Ollama. Try: ollama pull qwen2.5:7b"))?;
+
+    let id = s.jobs.start(&model).map_err(|_| {
+        ApiError(StatusCode::CONFLICT, "A calendar is already being generated. Wait for it to finish.".into())
+    })?;
+    let (jobs, store) = (s.jobs.clone(), s.store.clone());
+    let model_out = model.clone();
+    tokio::spawn(async move {
+        let handle = jobs.handle(id);
+        // Content is never logged: only stages and sizes.
+        tracing::info!("generation {id} started with {model}");
+        match generate_calendar(&ollama, &model, &req, &handle).await {
+            Ok(cal) => match store.save(&cal).await {
+                Ok(()) => {
+                    tracing::info!("generation {id} done: {} entries", cal.entries.len());
+                    jobs.update(id, |j| {
+                        j.status = JobStatus::Done;
+                        j.stage = Stage::Done;
+                        j.message = "Your calendar is ready".into();
+                        j.done = cal.entries.len() as u32;
+                        j.calendar_id = Some(cal.id);
+                    });
+                }
+                Err(e) => jobs.update(id, |j| {
+                    j.status = JobStatus::Failed;
+                    j.error = Some(format!("Could not save the calendar: {e}"));
+                }),
+            },
+            Err(e) => {
+                tracing::warn!("generation {id} failed: {e}");
+                jobs.update(id, |j| {
+                    j.status = JobStatus::Failed;
+                    j.error = Some(e.to_string());
+                });
+            }
+        }
+    });
+    Ok((StatusCode::ACCEPTED, Json(json!({ "job_id": id, "model": model_out }))))
+}
+
+async fn get_job(State(s): State<AppState>, Path(id): Path<Uuid>) -> Result<impl IntoResponse, ApiError> {
+    s.jobs.get(id).map(Json).ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "Job not found".into()))
+}
+
+async fn current_job(State(s): State<AppState>) -> impl IntoResponse {
+    Json(json!({ "job": s.jobs.running() }))
 }
