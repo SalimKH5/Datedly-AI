@@ -14,10 +14,11 @@ use uuid::Uuid;
 
 use crate::{
     ai::{ollama::Ollama, AiProvider},
-    generate::{generate_calendar, GenerateRequest, Stage},
+    generate::{generate_calendar, regenerate_entry, GenerateRequest, RegenerateEntryRequest, Stage},
     jobs::{JobStatus, Jobs},
     models::{slugify, Calendar, CalendarStatus, Entry, EntryStatus, NewCalendar},
     schedule::entry_date,
+    validate::sanitize_calendar,
     store::{Settings, Store},
 };
 
@@ -60,6 +61,8 @@ pub fn router(state: AppState) -> Router {
             "/api/calendars/{id}",
             get(get_calendar).put(update_calendar).delete(delete_calendar),
         )
+        .route("/api/calendars/{id}/regenerate", post(regenerate_calendar))
+        .route("/api/calendars/{id}/entries/regenerate", post(regenerate_one_entry))
         .with_state(state)
 }
 
@@ -177,13 +180,13 @@ async fn update_calendar(
     Json(mut cal): Json<Calendar>,
 ) -> Result<Json<Calendar>, ApiError> {
     let existing = s.store.get(id).await?.ok_or_else(not_found)?;
-    if cal.title.trim().is_empty() {
-        return Err(bad("Title is required"));
-    }
+    sanitize_calendar(&mut cal).map_err(|m| bad(&m))?;
+    // Identity and history come from the server, not from the request.
     cal.id = existing.id;
     cal.created_at = existing.created_at;
+    cal.generation = existing.generation;
+    cal.prompt = existing.prompt;
     cal.updated_at = Utc::now();
-    cal.slug = slugify(&cal.slug);
     s.store.save(&cal).await?;
     Ok(Json(cal))
 }
@@ -201,11 +204,8 @@ async fn delete_calendar(
 
 // ---------------------------------------------------------------- generation
 
-async fn start_generation(
-    State(s): State<AppState>,
-    Json(req): Json<GenerateRequest>,
-) -> Result<impl IntoResponse, ApiError> {
-    req.validate().map_err(|m| bad(&m))?;
+/// Picks the provider and model: requested > saved > preferred installed one.
+async fn resolve_model(s: &AppState, requested: Option<String>) -> Result<(Ollama, String), ApiError> {
     let settings = s.store.settings().await;
     let ollama = Ollama::new(&settings.ollama_endpoint);
     let status = ollama.status().await;
@@ -215,25 +215,81 @@ async fn start_generation(
             status.error.unwrap_or_else(|| "Ollama is not reachable".into()),
         ));
     }
-    // Requested model > saved model > first installed model, if installed.
-    let model = req
-        .model
-        .clone()
-        .or(settings.model.clone())
+    let model = requested
+        .or(settings.model)
         .filter(|m| status.models.iter().any(|x| &x.name == m))
         .or_else(|| preferred_model(&status.models))
         .ok_or_else(|| bad("No text model is installed in Ollama. Try: ollama pull qwen2.5:7b"))?;
+    Ok((ollama, model))
+}
 
+async fn start_generation(
+    State(s): State<AppState>,
+    Json(req): Json<GenerateRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    req.validate().map_err(|m| bad(&m))?;
+    let (ollama, model) = resolve_model(&s, req.model.clone()).await?;
+    let id = spawn_generation(&s, ollama, model.clone(), req, None)?;
+    Ok((StatusCode::ACCEPTED, Json(json!({ "job_id": id, "model": model }))))
+}
+
+/// Regenerates a whole calendar from its prompt, keeping its id and schedule.
+async fn regenerate_calendar(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    let existing = s.store.get(id).await?.ok_or_else(not_found)?;
+    let req = GenerateRequest {
+        prompt: if existing.prompt.trim().chars().count() >= 8 {
+            existing.prompt.clone()
+        } else {
+            format!("{}. {}", existing.title, existing.description)
+        },
+        entry_count: Some((existing.entries.len() as u32).clamp(1, crate::generate::MAX_ENTRIES)),
+        start_date: Some(existing.schedule.start_date),
+        language: Some(existing.language.clone()),
+        model: None,
+    };
+    req.validate().map_err(|m| bad(&m))?;
+    let (ollama, model) = resolve_model(&s, None).await?;
+    let job = spawn_generation(&s, ollama, model.clone(), req, Some(existing))?;
+    Ok((StatusCode::ACCEPTED, Json(json!({ "job_id": job, "model": model }))))
+}
+
+fn spawn_generation(
+    s: &AppState,
+    ollama: Ollama,
+    model: String,
+    req: GenerateRequest,
+    target: Option<Calendar>,
+) -> Result<Uuid, ApiError> {
     let id = s.jobs.start(&model).map_err(|_| {
         ApiError(StatusCode::CONFLICT, "A calendar is already being generated. Wait for it to finish.".into())
     })?;
     let (jobs, store) = (s.jobs.clone(), s.store.clone());
-    let model_out = model.clone();
     tokio::spawn(async move {
         let handle = jobs.handle(id);
         // Content is never logged: only stages and sizes.
         tracing::info!("generation {id} started with {model}");
-        match generate_calendar(&ollama, &model, &req, &handle).await {
+        let result = generate_calendar(&ollama, &model, &req, &handle).await.map(|mut cal| {
+            if let Some(old) = &target {
+                // Same calendar, new content: keep identity, schedule and look.
+                cal.id = old.id;
+                cal.slug = old.slug.clone();
+                cal.created_at = old.created_at;
+                cal.status = old.status;
+                cal.theme = old.theme.clone();
+                cal.schedule.interval = old.schedule.interval.clone();
+                cal.schedule.timezone = old.schedule.timezone.clone();
+                cal.schedule.unlock_time = old.schedule.unlock_time.clone();
+                let schedule = cal.schedule.clone();
+                for e in cal.entries.iter_mut() {
+                    e.date = entry_date(&schedule, e.index - 1);
+                }
+            }
+            cal
+        });
+        match result {
             Ok(cal) => match store.save(&cal).await {
                 Ok(()) => {
                     tracing::info!("generation {id} done: {} entries", cal.entries.len());
@@ -259,7 +315,25 @@ async fn start_generation(
             }
         }
     });
-    Ok((StatusCode::ACCEPTED, Json(json!({ "job_id": id, "model": model_out }))))
+    Ok(id)
+}
+
+/// Writes a new version of one entry and returns it WITHOUT saving: the
+/// editor merges it into the draft, so unsaved edits are never lost.
+async fn regenerate_one_entry(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<RegenerateEntryRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let cal = s.store.get(id).await?.ok_or_else(not_found)?;
+    if s.jobs.running().is_some() {
+        return Err(ApiError(StatusCode::CONFLICT, "A calendar is being generated. Try again when it is done.".into()));
+    }
+    let (ollama, model) = resolve_model(&s, None).await?;
+    let entry = regenerate_entry(&ollama, &model, &cal, &req)
+        .await
+        .map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(entry))
 }
 
 async fn get_job(State(s): State<AppState>, Path(id): Path<Uuid>) -> Result<impl IntoResponse, ApiError> {

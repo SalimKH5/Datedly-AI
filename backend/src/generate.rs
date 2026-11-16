@@ -308,7 +308,7 @@ Plan exactly {n} entries, indexes 1 to {n}. Match seasonal content to these real
     )
 }
 
-fn entries_prompt(b: &Brief, plan: &Plan, batch: &[&PlannedEntry]) -> String {
+fn entries_prompt(b: &Brief, plan: &Plan, batch: &[&PlannedEntry], free: bool) -> String {
     let outline: String = plan
         .entries
         .iter()
@@ -331,11 +331,16 @@ For each entry:\n\
 - quiz: ONLY if content_type is quiz: a question with 3 or 4 choices, answer_index (0-based) of the correct one and a one-sentence explanation; otherwise question \"\", choices [], answer_index 0, explanation \"\".\n\
 - resources: 0 to 2 well-known official sources (label + url) only if you are sure the URL exists, else [].\n\
 - image_prompt: one sentence describing an illustration for this entry.\n\
-Keep the same index, title and content_type as the outline.",
+{}",
         brief_context(b),
         outline,
         batch.len(),
-        todo
+        todo,
+        if free {
+            "Keep the same index. The USER INSTRUCTION has priority: change the title and content_type if it asks for it (for example set content_type to \"quiz\" and fill the quiz to turn the entry into a quiz)."
+        } else {
+            "Keep the same index, title and content_type as the outline."
+        }
     )
 }
 
@@ -527,6 +532,39 @@ pub fn find_warnings(entries: &BTreeMap<u32, GenEntry>, expected: u32) -> Vec<St
     warnings
 }
 
+fn words(s: &str) -> HashSet<String> {
+    s.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() > 2)
+        .map(String::from)
+        .collect()
+}
+
+/// Small models often explain the right answer but point `answer_index` at
+/// another choice. When the explanation clearly matches exactly one other
+/// choice and not the selected one, trust the explanation.
+pub fn fix_quiz_answer(choices: &[String], answer_index: usize, explanation: &str) -> usize {
+    let exp = words(explanation);
+    if exp.is_empty() || answer_index >= choices.len() {
+        return answer_index;
+    }
+    let score = |c: &String| {
+        let w = words(c);
+        if w.is_empty() {
+            0.0
+        } else {
+            w.iter().filter(|x| exp.contains(*x)).count() as f64 / w.len() as f64
+        }
+    };
+    let scores: Vec<f64> = choices.iter().map(score).collect();
+    let strong: Vec<usize> = (0..scores.len()).filter(|i| scores[*i] >= 0.6).collect();
+    if strong.len() == 1 && strong[0] != answer_index && scores[answer_index] < 0.3 {
+        strong[0]
+    } else {
+        answer_index
+    }
+}
+
 /// "A) Paris", "b. Paris", "1) Paris" -> "Paris" (the UI lays out choices itself).
 fn strip_choice_label(c: &str) -> String {
     let t = c.trim();
@@ -563,10 +601,12 @@ fn to_blocks(e: &GenEntry) -> Vec<Block> {
         blocks.push(Block::Challenge { body: e.challenge.trim().into() });
     }
     if is_quiz(e) && quiz_ok(&e.quiz) {
+        let choices: Vec<String> = e.quiz.choices.iter().map(|c| strip_choice_label(c)).collect();
+        let answer_index = fix_quiz_answer(&choices, e.quiz.answer_index as usize, &e.quiz.explanation);
         blocks.push(Block::Quiz {
             question: e.quiz.question.trim().into(),
-            choices: e.quiz.choices.iter().map(|c| strip_choice_label(c)).collect(),
-            answer_index: e.quiz.answer_index as usize,
+            choices,
+            answer_index,
             explanation: Some(e.quiz.explanation.trim().to_string()).filter(|s| !s.is_empty()),
         });
     }
@@ -624,7 +664,7 @@ pub async fn generate_calendar(
     progress.entries(0, n);
     let planned: Vec<&PlannedEntry> = plan.entries.iter().collect();
     for batch in planned.chunks(BATCH_SIZE) {
-        write_batch(ai, model, &brief, &plan, batch, &mut written, progress).await?;
+        write_batch(ai, model, &brief, &plan, batch, false, &mut written, progress).await?;
         progress.entries(written.len().min(n as usize) as u32, n);
     }
 
@@ -640,7 +680,7 @@ pub async fn generate_calendar(
         let redo: Vec<&PlannedEntry> = plan.entries.iter().filter(|e| todo.contains(&e.index)).collect();
         for batch in redo.chunks(BATCH_SIZE) {
             // A failed repair is not fatal: the entry is flagged instead.
-            if let Err(e) = write_batch(ai, model, &brief, &plan, batch, &mut written, progress).await {
+            if let Err(e) = write_batch(ai, model, &brief, &plan, batch, false, &mut written, progress).await {
                 progress.log(&format!("Repair failed: {e}"));
             }
         }
@@ -762,6 +802,7 @@ async fn write_batch(
     brief: &Brief,
     plan: &Plan,
     batch: &[&PlannedEntry],
+    free: bool,
     written: &mut BTreeMap<u32, GenEntry>,
     progress: &dyn Progress,
 ) -> Result<(), GenError> {
@@ -775,7 +816,7 @@ async fn write_batch(
         batch.first().map(|e| e.index).unwrap_or(0),
         batch.last().map(|e| e.index).unwrap_or(0)
     );
-    let out: Out = ask(ai, model, entries_prompt(brief, plan, batch), entries_schema(), 0.7, progress, &label).await?;
+    let out: Out = ask(ai, model, entries_prompt(brief, plan, batch, free), entries_schema(), 0.7, progress, &label).await?;
     // Models sometimes renumber: map answers back to the batch by position.
     for (pos, mut e) in out.entries.into_iter().enumerate() {
         if !wanted.contains(&e.index) {
@@ -793,6 +834,125 @@ async fn write_batch(
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------- single entry
+
+/// Rebuilds a brief from an existing calendar (used by the editor).
+fn brief_from_calendar(cal: &Calendar) -> Brief {
+    let report = cal.generation.clone().unwrap_or_default();
+    Brief {
+        title: cal.title.clone(),
+        description: cal.description.clone(),
+        topic: cal.prompt.clone(),
+        audience: report.audience,
+        objective: cal.description.clone(),
+        language: cal.language.clone(),
+        tone: report.tone,
+        entry_count: cal.entries.len() as u32,
+        interval: String::new(),
+        start_date: cal.schedule.start_date.to_string(),
+        content_formats: vec![],
+        difficulty: String::new(),
+        theme: cal.theme.clone(),
+        requirements: vec![],
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RegenerateEntryRequest {
+    pub entry: Entry,
+    /// Optional instruction from the user ("make it easier", "turn it into a quiz"...).
+    #[serde(default)]
+    pub instruction: String,
+}
+
+/// Writes a new version of one entry, keeping its id, position and date.
+/// The calendar's other entries are given as context to avoid repetition.
+pub async fn regenerate_entry(
+    ai: &dyn AiProvider,
+    model: &str,
+    cal: &Calendar,
+    req: &RegenerateEntryRequest,
+) -> Result<Entry, GenError> {
+    let instruction = clip_chars(req.instruction.trim(), 500);
+    let target = &req.entry;
+    let brief = brief_from_calendar(cal);
+    let plan = Plan {
+        sections: vec![],
+        entries: cal
+            .entries
+            .iter()
+            .filter(|e| e.id != target.id)
+            .map(|e| PlannedEntry {
+                index: e.index,
+                title: e.title.clone(),
+                content_type: e.content_type.clone(),
+                summary: String::new(),
+            })
+            .collect(),
+    };
+    let summary = match (instruction.is_empty(), target.metadata.get("summary").and_then(|v| v.as_str())) {
+        (false, _) => format!("USER INSTRUCTION (follow it): {instruction}"),
+        (true, Some(s)) if !s.is_empty() => format!("{s} Write a fresh, better version."),
+        _ => "Write a fresh, engaging version that fits the calendar.".into(),
+    };
+    let planned = PlannedEntry {
+        index: target.index,
+        title: if target.title.trim().is_empty() { "New entry".into() } else { target.title.clone() },
+        content_type: match (instruction.is_empty(), target.content_type.trim()) {
+            // Leave the format open so the instruction can change it.
+            (false, current) => format!("format of your choice to follow the instruction, currently {current}"),
+            (true, "") => "text".into(),
+            (true, current) => current.into(),
+        },
+        summary,
+    };
+    let fallback_type = if target.content_type.trim().is_empty() { "text".to_string() } else { target.content_type.clone() };
+    let progress = NoopProgress;
+    let mut written = BTreeMap::new();
+    for _ in 0..2 {
+        write_batch(ai, model, &brief, &plan, &[&planned], !instruction.is_empty(), &mut written, &progress).await?;
+        if find_issues(&written, 0).is_empty() && written.get(&planned.index).is_some_and(|g| {
+            g.body.split_whitespace().count() >= 12 && (!is_quiz(g) || quiz_ok(&g.quiz))
+        }) {
+            break;
+        }
+    }
+    let g = written
+        .remove(&planned.index)
+        .ok_or_else(|| GenError::Invalid("The AI did not return the entry. Try again.".into()))?;
+    let mut metadata = target.metadata.clone();
+    metadata.remove("needs_review");
+    // An instruction may legitimately change the title and format.
+    let title = if g.title.trim().is_empty() { planned.title.clone() } else { clip_chars(g.title.trim(), 140) };
+    let content_type = match g.content_type.trim() {
+        t if t.is_empty() || t.len() > 40 => fallback_type,
+        t => t.to_lowercase(),
+    };
+    Ok(Entry {
+        id: target.id,
+        index: target.index,
+        title,
+        date: target.date,
+        content_type,
+        blocks: to_blocks(&g),
+        metadata,
+        status: target.status.clone(),
+    })
+}
+
+fn clip_chars(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
+}
+
+struct NoopProgress;
+impl Progress for NoopProgress {
+    fn stage(&self, _: Stage, _: &str) {}
+    fn entries(&self, _: u32, _: u32) {}
+    fn brief(&self, _: &Brief) {}
+    fn plan(&self, _: &Plan) {}
+    fn log(&self, _: &str) {}
 }
 
 // ---------------------------------------------------------------- tests
@@ -920,6 +1080,22 @@ mod tests {
         let w = find_warnings(&m, 2);
         assert!(w.iter().any(|x| x.contains("same title")));
         assert!(w.iter().any(|x| x.contains("very similar")));
+    }
+
+    #[test]
+    fn quiz_answer_follows_explanation() {
+        let c: Vec<String> = vec![
+            "Held in Las Vegas, Nevada".into(),
+            "Held at McNichols Sports Arena in Denver, Colorado".into(),
+            "Cancelled".into(),
+        ];
+        let exp = "UFC 1 was held on November 12, 1993, at McNichols Sports Arena in Denver, Colorado.";
+        assert_eq!(fix_quiz_answer(&c, 0, exp), 1);
+        // Correct index is left alone; vague explanations change nothing.
+        assert_eq!(fix_quiz_answer(&c, 1, exp), 1);
+        assert_eq!(fix_quiz_answer(&c, 0, "Good guess!"), 0);
+        let n: Vec<String> = vec!["4".into(), "6".into(), "8".into()];
+        assert_eq!(fix_quiz_answer(&n, 1, "Always 6 branches."), 1);
     }
 
     #[test]
