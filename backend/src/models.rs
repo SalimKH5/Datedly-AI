@@ -121,8 +121,26 @@ pub struct Calendar {
     /// How the calendar was produced (model, duration, validation notes).
     #[serde(default)]
     pub generation: Option<GenerationReport>,
+    /// Set when the calendar is published.
+    #[serde(default)]
+    pub publication: Option<Publication>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Publication {
+    pub published_at: DateTime<Utc>,
+    /// Accelerated demonstration: one entry every `every_minutes` from `start`,
+    /// instead of following the calendar dates.
+    #[serde(default)]
+    pub demo: Option<Demo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Demo {
+    pub start: DateTime<Utc>,
+    pub every_minutes: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

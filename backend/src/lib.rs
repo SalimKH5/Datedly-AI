@@ -6,3 +6,4 @@ pub mod models;
 pub mod schedule;
 pub mod store;
 pub mod validate;
+pub mod publish;

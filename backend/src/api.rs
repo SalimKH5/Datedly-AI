@@ -16,7 +16,8 @@ use crate::{
     ai::{ollama::Ollama, AiProvider},
     generate::{generate_calendar, regenerate_entry, GenerateRequest, RegenerateEntryRequest, Stage},
     jobs::{JobStatus, Jobs},
-    models::{slugify, Calendar, CalendarStatus, Entry, EntryStatus, NewCalendar},
+    models::{slugify, Calendar, CalendarStatus, Demo, Entry, EntryStatus, NewCalendar, Publication},
+    publish::{bundle_path, public_from_calendar, seal, KeySource, MasterKey},
     schedule::entry_date,
     validate::sanitize_calendar,
     store::{Settings, Store},
@@ -26,6 +27,7 @@ use crate::{
 pub struct AppState {
     pub store: Store,
     pub jobs: Jobs,
+    pub publish: PublishCtx,
 }
 
 pub struct ApiError(StatusCode, String);
@@ -62,6 +64,9 @@ pub fn router(state: AppState) -> Router {
             get(get_calendar).put(update_calendar).delete(delete_calendar),
         )
         .route("/api/calendars/{id}/regenerate", post(regenerate_calendar))
+        .route("/api/calendars/{id}/publish", post(publish_calendar))
+        .route("/api/calendars/{id}/unpublish", post(unpublish_calendar))
+        .route("/api/public/{slug}", get(public_view))
         .route("/api/calendars/{id}/entries/regenerate", post(regenerate_one_entry))
         .with_state(state)
 }
@@ -160,6 +165,7 @@ async fn create_calendar(
         status: CalendarStatus::Draft,
         entries,
         generation: None,
+        publication: None,
         created_at: now,
         updated_at: now,
     };
@@ -186,8 +192,12 @@ async fn update_calendar(
     cal.created_at = existing.created_at;
     cal.generation = existing.generation;
     cal.prompt = existing.prompt;
+    cal.status = existing.status;
+    cal.publication = existing.publication;
+    cal.slug = existing.slug;
     cal.updated_at = Utc::now();
     s.store.save(&cal).await?;
+    sync_bundle(&s.publish, &cal)?;
     Ok(Json(cal))
 }
 
@@ -195,6 +205,9 @@ async fn delete_calendar(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
+    if let Some(cal) = s.store.get(id).await? {
+        let _ = std::fs::remove_file(bundle_path(&s.publish.publish_dir, &cal.slug));
+    }
     if s.store.delete(id).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
@@ -266,7 +279,7 @@ fn spawn_generation(
     let id = s.jobs.start(&model).map_err(|_| {
         ApiError(StatusCode::CONFLICT, "A calendar is already being generated. Wait for it to finish.".into())
     })?;
-    let (jobs, store) = (s.jobs.clone(), s.store.clone());
+    let (jobs, store, publish) = (s.jobs.clone(), s.store.clone(), s.publish.clone());
     tokio::spawn(async move {
         let handle = jobs.handle(id);
         // Content is never logged: only stages and sizes.
@@ -278,6 +291,7 @@ fn spawn_generation(
                 cal.slug = old.slug.clone();
                 cal.created_at = old.created_at;
                 cal.status = old.status;
+                cal.publication = old.publication.clone();
                 cal.theme = old.theme.clone();
                 cal.schedule.interval = old.schedule.interval.clone();
                 cal.schedule.timezone = old.schedule.timezone.clone();
@@ -292,6 +306,9 @@ fn spawn_generation(
         match result {
             Ok(cal) => match store.save(&cal).await {
                 Ok(()) => {
+                    if let Err(e) = sync_bundle(&publish, &cal) {
+                        tracing::warn!("bundle refresh failed: {}", e.1);
+                    }
                     tracing::info!("generation {id} done: {} entries", cal.entries.len());
                     jobs.update(id, |j| {
                         j.status = JobStatus::Done;
@@ -342,4 +359,115 @@ async fn get_job(State(s): State<AppState>, Path(id): Path<Uuid>) -> Result<impl
 
 async fn current_job(State(s): State<AppState>) -> impl IntoResponse {
     Json(json!({ "job": s.jobs.running() }))
+}
+
+// ---------------------------------------------------------------- publication
+
+/// Where bundles go and where the master key lives.
+#[derive(Clone)]
+pub struct PublishCtx {
+    pub data_dir: std::path::PathBuf,
+    pub publish_dir: std::path::PathBuf,
+}
+
+/// Keeps `published/<slug>.enc.json` in line with the calendar:
+/// written when published, removed otherwise.
+fn sync_bundle(ctx: &PublishCtx, cal: &Calendar) -> Result<Option<KeySource>, ApiError> {
+    let path = bundle_path(&ctx.publish_dir, &cal.slug);
+    if cal.status != CalendarStatus::Published {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+        return Ok(None);
+    }
+    let (key, source) = MasterKey::load_or_create(&ctx.data_dir).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let bundle = seal(cal, &key).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    std::fs::create_dir_all(&ctx.publish_dir)?;
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(&bundle).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?)?;
+    std::fs::rename(&tmp, &path)?;
+    // Content is never logged: only the slug and the size.
+    tracing::info!("bundle written: {} ({} entries)", cal.slug, bundle.entries.len());
+    Ok(Some(source))
+}
+
+#[derive(Deserialize)]
+struct PublishInput {
+    /// Accelerated demo: one entry every N minutes, starting now (or `demo_start`).
+    #[serde(default)]
+    demo_every_minutes: Option<u32>,
+    #[serde(default)]
+    demo_start: Option<chrono::DateTime<Utc>>,
+}
+
+async fn publish_calendar(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<PublishInput>,
+) -> Result<impl IntoResponse, ApiError> {
+    let mut cal = s.store.get(id).await?.ok_or_else(not_found)?;
+    sanitize_calendar(&mut cal).map_err(|m| bad(&m))?;
+    if cal.entries.is_empty() {
+        return Err(bad("Add at least one entry before publishing."));
+    }
+    if let Some(n) = input.demo_every_minutes {
+        if !(1..=1440).contains(&n) {
+            return Err(bad("Demo interval must be between 1 and 1440 minutes."));
+        }
+    }
+    // A published URL must be unique: suffix the slug if another calendar uses it.
+    let others = s.store.all().await?;
+    let taken = |slug: &str| others.iter().any(|o| o.id != cal.id && o.status == CalendarStatus::Published && o.slug == slug);
+    let base = slugify(&cal.title);
+    let mut slug = if cal.status == CalendarStatus::Published { cal.slug.clone() } else { base.clone() };
+    let mut n = 2;
+    while taken(&slug) {
+        slug = format!("{base}-{n}");
+        n += 1;
+    }
+    // Republishing under a new slug: remove the old bundle first.
+    if cal.status == CalendarStatus::Published && cal.slug != slug {
+        let _ = std::fs::remove_file(bundle_path(&s.publish.publish_dir, &cal.slug));
+    }
+    cal.slug = slug;
+    cal.status = CalendarStatus::Published;
+    cal.publication = Some(Publication {
+        published_at: Utc::now(),
+        demo: input.demo_every_minutes.map(|every| Demo { start: input.demo_start.unwrap_or_else(Utc::now), every_minutes: every }),
+    });
+    cal.updated_at = Utc::now();
+    s.store.save(&cal).await?;
+    let source = sync_bundle(&s.publish, &cal)?;
+    let key = match source {
+        Some(KeySource::Env) => json!({ "source": "env" }),
+        Some(KeySource::File(p)) => json!({ "source": "file", "path": p.display().to_string(), "created": false }),
+        Some(KeySource::Created(p)) => json!({ "source": "file", "path": p.display().to_string(), "created": true }),
+        None => json!(null),
+    };
+    let bundle = bundle_path(&s.publish.publish_dir, &cal.slug);
+    Ok(Json(json!({ "calendar": cal, "bundle": bundle.display().to_string(), "key": key })))
+}
+
+async fn unpublish_calendar(State(s): State<AppState>, Path(id): Path<Uuid>) -> Result<impl IntoResponse, ApiError> {
+    let mut cal = s.store.get(id).await?.ok_or_else(not_found)?;
+    cal.status = CalendarStatus::Draft;
+    cal.publication = None;
+    cal.updated_at = Utc::now();
+    s.store.save(&cal).await?;
+    sync_bundle(&s.publish, &cal)?;
+    Ok(Json(cal))
+}
+
+/// Local preview of the public page, computed with the server clock.
+async fn public_view(State(s): State<AppState>, Path(slug): Path<String>) -> Result<impl IntoResponse, ApiError> {
+    let cal = s
+        .store
+        .all()
+        .await?
+        .into_iter()
+        .find(|c| c.slug == slug && c.status == CalendarStatus::Published)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "No published calendar with this address".into()))?;
+    Ok(Json(public_from_calendar(&cal, Utc::now())))
 }

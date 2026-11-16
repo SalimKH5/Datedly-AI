@@ -26,7 +26,7 @@ const BATCH_SIZE: usize = 4;
 const MAX_ATTEMPTS: u32 = 3;
 const REPAIR_ROUNDS: u32 = 2;
 
-pub const THEMES: &[&str] = &["aurora", "ember", "forest", "ocean", "candy", "mono"];
+pub const THEMES: &[&str] = &["aurora", "ember", "forest", "ocean", "candy", "mono", "arcade"];
 
 // ---------------------------------------------------------------- inputs
 
@@ -264,7 +264,7 @@ Rules:\n\
 - interval: daily, weekly or monthly.\n\
 - start_date: YYYY-MM-DD if the request implies one (an Advent calendar starts on December 1st of the coming season), otherwise empty string.\n\
 - content_formats: the kinds of entries that fit (e.g. quiz, challenge, fact, story, lesson, activity, recipe, recommendation).\n\
-- theme: the visual palette that fits best: aurora (violet night), ember (warm red/orange, festive), forest (green, nature/health), ocean (blue, calm/travel/tech), candy (pink/playful, kids), mono (sober, business).\n\
+- theme: the visual palette that fits best: aurora (violet night), ember (warm red/orange, festive), forest (green, nature/health), ocean (blue, calm/travel/tech), candy (pink/playful, kids), mono (sober, business), arcade (retro pixel video game, playful challenges, tech or gaming topics).\n\
 - requirements: explicit constraints from the request.",
         req.prompt.trim()
     );
@@ -734,6 +734,7 @@ pub async fn generate_calendar(
             audience: brief.audience.clone(),
             tone: brief.tone.clone(),
         }),
+        publication: None,
         created_at: now,
         updated_at: now,
     };

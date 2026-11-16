@@ -53,6 +53,22 @@ impl Store {
         Ok(out)
     }
 
+    /// Every calendar, fully loaded (used for slug lookups).
+    pub async fn all(&self) -> std::io::Result<Vec<Calendar>> {
+        let mut out = vec![];
+        let mut dir = fs::read_dir(self.root.join("calendars")).await?;
+        while let Some(e) = dir.next_entry().await? {
+            if e.path().extension().is_some_and(|x| x == "json") {
+                if let Ok(bytes) = fs::read(e.path()).await {
+                    if let Ok(c) = serde_json::from_slice::<Calendar>(&bytes) {
+                        out.push(c);
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub async fn get(&self, id: Uuid) -> std::io::Result<Option<Calendar>> {
         match fs::read(self.calendar_path(id)).await {
             Ok(b) => Ok(serde_json::from_slice(&b).ok()),

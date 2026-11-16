@@ -139,6 +139,7 @@ mod tests {
             status: CalendarStatus::Draft,
             entries,
             generation: None,
+            publication: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
