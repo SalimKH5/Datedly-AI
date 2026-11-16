@@ -61,6 +61,15 @@ export interface PlanSection {
   focus: string;
 }
 
+export type Interval = { kind: "daily" } | { kind: "weekly" } | { kind: "monthly" } | { kind: "every_n_days"; days: number };
+
+export interface Schedule {
+  start_date: string;
+  interval: Interval;
+  timezone: string;
+  unlock_time: string;
+}
+
 export interface Calendar {
   id: string;
   slug: string;
@@ -69,7 +78,7 @@ export interface Calendar {
   prompt: string;
   language: string;
   theme: string;
-  schedule: { start_date: string; interval: { kind: string }; timezone: string; unlock_time: string };
+  schedule: Schedule;
   status: CalendarStatus;
   entries: Entry[];
   generation: {
@@ -154,4 +163,14 @@ export const api = {
     request<{ job_id: string; model: string }>("/api/generate", { method: "POST", body: JSON.stringify(input) }),
   job: (id: string) => request<Job>(`/api/jobs/${encodeURIComponent(id)}`),
   currentJob: () => request<{ job: Job | null }>("/api/jobs/current"),
+  saveCalendar: (c: Calendar) =>
+    request<Calendar>(`/api/calendars/${encodeURIComponent(c.id)}`, { method: "PUT", body: JSON.stringify(c) }),
+  deleteCalendar: (id: string) => request<void>(`/api/calendars/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  regenerateCalendar: (id: string) =>
+    request<{ job_id: string; model: string }>(`/api/calendars/${encodeURIComponent(id)}/regenerate`, { method: "POST" }),
+  regenerateEntry: (id: string, entry: Entry, instruction: string) =>
+    request<Entry>(`/api/calendars/${encodeURIComponent(id)}/entries/regenerate`, {
+      method: "POST",
+      body: JSON.stringify({ entry, instruction }),
+    }),
 };

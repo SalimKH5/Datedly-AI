@@ -1,19 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import { ChevronDown, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { ChevronDown, Loader2, Sparkles, Wand2, Wrench } from "lucide-react";
 import { api, type GenerateInput } from "@/lib/api";
+import { useT } from "@/lib/i18n";
+import { EXAMPLES } from "@/lib/content";
 
-const EXAMPLES = [
-  "A 24-day MMA Advent calendar with daily challenges, quizzes, historical facts and discoveries",
-  "A 30-day beginner fitness calendar with daily activities and short lessons",
-  "A 14-day Python course, from fundamentals to advanced concepts",
-  "A 7-day travel discovery calendar for Paris",
-  "A 12-month marketing calendar for a small bakery",
-];
-
-const LANGUAGES = [
-  ["", "Same as my prompt"],
+const LANGUAGES: [string, string][] = [
   ["en", "English"],
   ["fr", "Français"],
   ["es", "Español"],
@@ -27,13 +21,16 @@ export function PromptComposer({
   model,
   busy,
   onStarted,
+  initialPrompt = "",
 }: {
   aiReady: boolean;
   model: string | null;
   busy: boolean;
   onStarted: (jobId: string) => void;
+  initialPrompt?: string;
 }) {
-  const [prompt, setPrompt] = useState("");
+  const { t, lang } = useT();
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [advanced, setAdvanced] = useState(false);
   const [count, setCount] = useState("");
   const [start, setStart] = useState("");
@@ -44,7 +41,7 @@ export function PromptComposer({
   const tooShort = prompt.trim().length < 8;
   const disabled = !aiReady || busy || sending || tooShort;
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent | React.KeyboardEvent) {
     e.preventDefault();
     if (disabled) return;
     setError(null);
@@ -65,20 +62,25 @@ export function PromptComposer({
 
   return (
     <form onSubmit={submit} id="create" aria-labelledby="create-title" className="glass rounded-[2rem] p-6 sm:p-8">
-      <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-accent/20 text-accent-2">
-          <Sparkles size={20} />
-        </span>
-        <div>
-          <h2 id="create-title" className="text-xl font-medium">
-            Create a calendar
-          </h2>
-          <p className="text-sm text-muted">Describe your idea. The AI plans and writes every entry.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-accent/20 text-accent-2">
+            <Sparkles size={20} />
+          </span>
+          <div>
+            <h2 id="create-title" className="text-xl font-medium">
+              {t("create.title")}
+            </h2>
+            <p className="text-sm text-muted">{t("create.subtitle")}</p>
+          </div>
         </div>
+        <Link href="/toolkit" className="inline-flex items-center gap-1.5 text-sm text-accent-2 hover:underline">
+          <Wrench size={14} /> {t("create.help")}
+        </Link>
       </div>
 
       <label htmlFor="prompt" className="sr-only">
-        Your calendar idea
+        {t("create.label")}
       </label>
       <textarea
         id="prompt"
@@ -89,13 +91,13 @@ export function PromptComposer({
         }}
         maxLength={2000}
         rows={5}
-        placeholder="e.g. A Christmas calendar for 8-year-olds with stories, puzzles and a small activity every day…"
+        placeholder={t("create.placeholder")}
         className="mt-6 w-full resize-y rounded-3xl border border-line bg-black/20 p-5 text-lg leading-relaxed
                    placeholder:text-faint focus:border-accent/60 focus:outline-none"
       />
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {EXAMPLES.map((ex) => (
+        {EXAMPLES[lang].map((ex) => (
           <button
             key={ex}
             type="button"
@@ -114,25 +116,25 @@ export function PromptComposer({
         aria-expanded={advanced}
         className="mt-5 inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink"
       >
-        Advanced settings
+        {t("create.advanced")}
         <ChevronDown size={16} className={`transition-transform ${advanced ? "rotate-180" : ""}`} />
       </button>
       {advanced && (
         <div className="mt-3 grid gap-4 sm:grid-cols-3">
           <label className="text-sm text-muted">
-            Number of entries
+            {t("create.count")}
             <input
               type="number"
               min={1}
               max={60}
               value={count}
               onChange={(e) => setCount(e.target.value)}
-              placeholder="Auto"
+              placeholder={t("create.auto")}
               className="mt-1.5 w-full rounded-2xl border border-line bg-black/30 px-4 py-2.5 text-ink"
             />
           </label>
           <label className="text-sm text-muted">
-            Start date
+            {t("create.start")}
             <input
               type="date"
               value={start}
@@ -141,12 +143,13 @@ export function PromptComposer({
             />
           </label>
           <label className="text-sm text-muted">
-            Language
+            {t("create.language")}
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
               className="mt-1.5 w-full rounded-2xl border border-line bg-black/30 px-4 py-2.5 text-ink"
             >
+              <option value="">{t("create.sameLang")}</option>
               {LANGUAGES.map(([v, l]) => (
                 <option key={v} value={v}>
                   {l}
@@ -165,15 +168,15 @@ export function PromptComposer({
 
       <div className="mt-6 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted">
-          {!aiReady
-            ? "Connect Ollama to enable generation."
-            : busy
-              ? "A calendar is being generated…"
-              : (
-                <>
-                  Model <span className="text-ink">{model}</span> · up to 60 entries · Ctrl+Enter
-                </>
-              )}
+          {!aiReady ? (
+            t("create.needAi")
+          ) : busy ? (
+            t("create.busy")
+          ) : (
+            <>
+              {t("create.model")} <span className="text-ink">{model}</span> · {t("create.limits")}
+            </>
+          )}
         </p>
         <button
           type="submit"
@@ -181,7 +184,7 @@ export function PromptComposer({
           className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-6 py-3 font-medium text-white
                      shadow-lg shadow-violet-900/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {sending ? <Loader2 size={18} className="animate-spin" /> : <Wand2 size={18} />} Generate calendar
+          {sending ? <Loader2 size={18} className="animate-spin" /> : <Wand2 size={18} />} {t("create.generate")}
         </button>
       </div>
     </form>

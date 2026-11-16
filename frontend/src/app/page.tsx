@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { TerminalSquare } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
+import { TopBar } from "@/components/TopBar";
 import { Greeting } from "@/components/Greeting";
 import { PromptComposer } from "@/components/PromptComposer";
 import { GenerationProgress } from "@/components/GenerationProgress";
@@ -10,6 +12,7 @@ import { AiEngineCard } from "@/components/AiEngineCard";
 import { MiniMonth } from "@/components/MiniMonth";
 import { CalendarsPanel } from "@/components/CalendarsPanel";
 import { api, ApiError, type AiStatus, type CalendarSummary } from "@/lib/api";
+import { useT, type Key } from "@/lib/i18n";
 
 type Loaded =
   | { ai: AiStatus; calendars: CalendarSummary[]; runningJob: string | null }
@@ -25,7 +28,10 @@ async function fetchState(): Promise<Loaded> {
   }
 }
 
-export default function Home() {
+function Studio() {
+  const { t } = useT();
+  // A prompt can arrive from the toolkit: /?prompt=...
+  const prefill = useSearchParams().get("prompt")?.slice(0, 2000) ?? "";
   const [ai, setAi] = useState<AiStatus | null>(null);
   const [calendars, setCalendars] = useState<CalendarSummary[]>([]);
   const [offline, setOffline] = useState(false);
@@ -53,6 +59,10 @@ export default function Home() {
     fetchState().then(apply);
   }, [apply]);
 
+  useEffect(() => {
+    if (prefill) document.getElementById("create")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [prefill]);
+
   const onStarted = useCallback((id: string) => {
     setJobId(id);
     setJobRunning(true);
@@ -64,28 +74,30 @@ export default function Home() {
   }, []);
   const onDismiss = useCallback(() => setJobId(null), []);
 
-  const stats = [
-    { label: "Calendars", value: calendars.length },
-    { label: "Drafts", value: calendars.filter((c) => c.status === "draft").length },
-    { label: "Published", value: calendars.filter((c) => c.status === "published").length },
-    { label: "Entries", value: calendars.reduce((n, c) => n + c.entry_count, 0) },
+  const stats: { label: Key; value: number }[] = [
+    { label: "stats.calendars", value: calendars.length },
+    { label: "stats.drafts", value: calendars.filter((c) => c.status === "draft").length },
+    { label: "stats.published", value: calendars.filter((c) => c.status === "published").length },
+    { label: "stats.entries", value: calendars.reduce((n, c) => n + c.entry_count, 0) },
   ];
 
   return (
     <div className="mx-auto flex max-w-7xl gap-6 px-4 pb-28 pt-6 sm:px-6 lg:pb-6">
       <Sidebar />
       <main className="min-w-0 flex-1 space-y-6">
+        <TopBar active="studio" />
         <Greeting />
 
         {offline && (
           <div role="alert" className="glass flex items-start gap-3 rounded-3xl border-warn/40 p-4 text-sm">
             <TerminalSquare className="mt-0.5 shrink-0 text-warn" size={18} />
             <p>
-              <span className="font-medium text-ink">The local studio is not running.</span>{" "}
+              <span className="font-medium text-ink">{t("offline.title")}</span>{" "}
               <span className="text-muted">
-                Calendars are created on your computer with Ollama. Start it with{" "}
-                <code className="rounded bg-black/40 px-1.5 py-0.5">cargo run</code> in the{" "}
-                <code className="rounded bg-black/40 px-1.5 py-0.5">backend</code> folder, then refresh.
+                {t("offline.a")} <code className="rounded bg-black/40 px-1.5 py-0.5">cargo run</code> {t("offline.b")}{" "}
+                <code className="rounded bg-black/40 px-1.5 py-0.5">backend</code>
+                {t("offline.c").startsWith(",") ? "" : " "}
+                {t("offline.c")}
               </span>
             </p>
           </div>
@@ -95,6 +107,8 @@ export default function Home() {
           <div className="min-w-0 space-y-6">
             {jobId && <GenerationProgress jobId={jobId} onFinished={onFinished} onDismiss={onDismiss} />}
             <PromptComposer
+              key={prefill}
+              initialPrompt={prefill}
               aiReady={!!ai?.status.available}
               model={ai?.selected_model ?? null}
               busy={jobRunning}
@@ -103,7 +117,7 @@ export default function Home() {
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {stats.map((s) => (
                 <div key={s.label} className="glass rounded-3xl p-5">
-                  <dt className="text-sm text-muted">{s.label}</dt>
+                  <dt className="text-sm text-muted">{t(s.label)}</dt>
                   <dd className="mt-1 text-3xl font-light tabular-nums">{s.value}</dd>
                 </div>
               ))}
@@ -117,5 +131,13 @@ export default function Home() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense>
+      <Studio />
+    </Suspense>
   );
 }

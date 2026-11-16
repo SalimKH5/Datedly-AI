@@ -4,14 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight, Check, Loader2, X } from "lucide-react";
 import { api, type Job, type Stage } from "@/lib/api";
+import { useT, type Key } from "@/lib/i18n";
 
-const STEPS: { stage: Stage; label: string }[] = [
-  { stage: "understanding", label: "Understand" },
-  { stage: "planning", label: "Plan" },
-  { stage: "writing", label: "Write" },
-  { stage: "validating", label: "Check" },
-  { stage: "saving", label: "Build" },
-];
+const STEPS: Stage[] = ["understanding", "planning", "writing", "validating", "saving"];
 const ORDER: Stage[] = ["understanding", "planning", "writing", "validating", "saving", "done"];
 
 export function GenerationProgress({
@@ -23,6 +18,7 @@ export function GenerationProgress({
   onFinished: () => void;
   onDismiss: () => void;
 }) {
+  const { t } = useT();
   const [job, setJob] = useState<Job | null>(null);
   const [lost, setLost] = useState(false);
 
@@ -66,9 +62,9 @@ export function GenerationProgress({
     <section aria-live="polite" aria-labelledby="gen-title" className="glass rounded-[2rem] p-6 sm:p-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm text-muted">{job?.model ? `Generating with ${job.model}` : "Starting…"}</p>
+          <p className="text-sm text-muted">{job?.model ? t("gen.with", { model: job.model }) : t("gen.starting")}</p>
           <h2 id="gen-title" className="mt-1 text-xl font-medium">
-            {job?.brief?.title || "Reading your idea…"}
+            {job?.brief?.title || t("gen.reading")}
           </h2>
           {job?.brief?.description && <p className="mt-1 max-w-2xl text-sm text-muted">{job.brief.description}</p>}
         </div>
@@ -76,7 +72,7 @@ export function GenerationProgress({
           <button
             type="button"
             onClick={onDismiss}
-            aria-label="Close"
+            aria-label={t("common.close")}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-muted hover:bg-surface-strong hover:text-ink"
           >
             <X size={18} />
@@ -87,9 +83,9 @@ export function GenerationProgress({
       {job?.brief && (
         <div className="mt-4 flex flex-wrap gap-2 text-xs">
           {[
-            `${job.brief.entry_count} entries`,
-            job.brief.interval,
-            `from ${job.brief.start_date}`,
+            t("gen.entries", { n: job.brief.entry_count }),
+            (["daily", "weekly", "monthly"].includes(job.brief.interval) ? t(`interval.${job.brief.interval}` as Key) : job.brief.interval),
+            t("gen.from", { date: job.brief.start_date }),
             job.brief.audience,
             job.brief.tone,
             job.brief.language.toUpperCase(),
@@ -104,10 +100,10 @@ export function GenerationProgress({
       )}
 
       <ol className="mt-6 grid grid-cols-5 gap-2">
-        {STEPS.map((s, i) => {
+        {STEPS.map((stage, i) => {
           const state = failed && i === current ? "failed" : i < current || job?.status === "done" ? "done" : i === current ? "active" : "todo";
           return (
-            <li key={s.stage} className="flex flex-col items-center gap-2 text-center text-xs sm:text-sm">
+            <li key={stage} className="flex flex-col items-center gap-2 text-center text-xs sm:text-sm">
               <span
                 className={`grid h-9 w-9 place-items-center rounded-full border ${
                   state === "done"
@@ -130,8 +126,8 @@ export function GenerationProgress({
                 )}
               </span>
               <span className={state === "todo" ? "text-faint" : "text-ink"}>
-                {s.label}
-                {s.stage === "writing" && job?.total ? (
+                {t(`step.${stage}` as Key)}
+                {stage === "writing" && job?.total ? (
                   <span className="block tabular-nums text-muted">
                     {job.done}/{job.total}
                   </span>
@@ -149,17 +145,17 @@ export function GenerationProgress({
         />
       </div>
       <p className="mt-3 text-sm text-muted">
-        {lost ? "Lost contact with the local studio, retrying…" : job?.message}
-        {job?.status === "running" && " · local models can take a few minutes"}
+        {lost ? t("gen.lost") : job ? (failed ? job.message : t(`stage.${job.stage}` as Key)) : ""}
+        {job?.status === "running" && ` · ${t("gen.slow")}`}
       </p>
 
       {failed && (
         <div role="alert" className="mt-5 flex gap-3 rounded-2xl border border-danger/40 bg-danger/10 p-4 text-sm">
           <AlertTriangle size={18} className="mt-0.5 shrink-0 text-danger" />
           <div>
-            <p className="font-medium text-ink">Generation failed</p>
+            <p className="font-medium text-ink">{t("gen.failed")}</p>
             <p className="mt-1 text-muted">{job?.error}</p>
-            <p className="mt-1 text-muted">Try again, or pick another model in the AI engine card.</p>
+            <p className="mt-1 text-muted">{t("gen.failedHint")}</p>
           </div>
         </div>
       )}
@@ -169,13 +165,13 @@ export function GenerationProgress({
           href={`/calendar?id=${job.calendar_id}`}
           className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-accent px-6 py-3 font-medium text-white hover:brightness-110"
         >
-          Open my calendar <ArrowRight size={18} />
+          {t("gen.open")} <ArrowRight size={18} />
         </Link>
       )}
 
       {job?.plan && (
         <details className="mt-6 border-t border-line pt-5" open={job.status === "running"}>
-          <summary className="cursor-pointer text-sm text-muted hover:text-ink">The plan</summary>
+          <summary className="cursor-pointer text-sm text-muted hover:text-ink">{t("gen.plan")}</summary>
           {job.plan.sections.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-2">
               {job.plan.sections.map((s) => (

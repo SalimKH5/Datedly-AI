@@ -36,6 +36,22 @@ npm install
 npm run dev
 ```
 
+## Studio features
+
+- **Editor** (`/calendar?id=…`, tab *Edit*): title, description, visual theme,
+  schedule (first date, daily / weekly / monthly / every N days, unlock time,
+  time zone), add / delete / drag-and-drop entries, edit every content block
+  (text, fact, story, challenge, steps, quiz, link, illustration idea).
+  *Rewrite with AI* regenerates one entry, optionally following an instruction
+  ("turn it into a quiz"); the result goes into the draft and is only stored
+  when you click **Save** (Ctrl+S). The server validates every save
+  (quiz answers, https-only links, lengths, time zone).
+- **Toolkit** (`/toolkit`): prompt builder, prompt recipes, checklist, model
+  guide (shows what is installed), editing tips, shortcuts, troubleshooting.
+- **Languages**: the interface switches between English and French (EN / FR in
+  the top bar, remembered in the browser). Labels inside a calendar follow the
+  calendar's own language.
+
 ## How generation works
 
 1. **Understand**: the AI extracts a brief (title, audience, tone, language,
@@ -61,7 +77,7 @@ Local models can state wrong facts: review the content before publishing.
 
 1. **Foundation**: architecture, Ollama detection, model selection, data models ✅
 2. **AI generation**: prompt → brief → plan → entries, schema-constrained JSON, validation and repair ✅
-3. Calendar editor: preview, edit, regenerate, drafts
+3. **Calendar editor**: preview, edit, rewrite one entry with an instruction, regenerate all, reorder, dates, themes, drafts ✅
 4. Publishing: public pages, server-side unlocking, scheduled GitHub Actions
 5. Quality: tests, security review, docs
 

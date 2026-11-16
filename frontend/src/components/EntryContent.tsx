@@ -3,12 +3,19 @@
 import { useState } from "react";
 import { BookOpen, ExternalLink, ImageIcon, Lightbulb, ListChecks, Target } from "lucide-react";
 import type { Block } from "@/lib/api";
+import type { Lang } from "@/lib/i18n";
 
-function Quiz({ block }: { block: Extract<Block, { type: "quiz" }> }) {
+// Labels inside a calendar follow the calendar's language, not the studio's.
+const L = {
+  en: { quiz: "Quiz", fact: "Did you know?", challenge: "Today's challenge", steps: "Steps", correct: "Correct! ", answer: "Answer: ", more: "To go further", image: "Illustration idea:" },
+  fr: { quiz: "Quiz", fact: "Le saviez-vous ?", challenge: "Défi du jour", steps: "Étapes", correct: "Bravo ! ", answer: "Réponse : ", more: "Pour aller plus loin", image: "Idée d'illustration :" },
+};
+
+function Quiz({ block, l }: { block: Extract<Block, { type: "quiz" }>; l: (typeof L)["en"] }) {
   const [picked, setPicked] = useState<number | null>(null);
   return (
     <div className="rounded-3xl border border-line bg-black/20 p-5">
-      <p className="text-xs uppercase tracking-wider text-accent-2">Quiz</p>
+      <p className="text-xs uppercase tracking-wider text-accent-2">{l.quiz}</p>
       <p className="mt-2 text-lg">{block.question}</p>
       <div className="mt-4 grid gap-2">
         {block.choices.map((c, i) => {
@@ -36,7 +43,7 @@ function Quiz({ block }: { block: Extract<Block, { type: "quiz" }> }) {
       {picked !== null && (
         <p className="mt-4 text-sm text-muted" role="status">
           <span className={picked === block.answer_index ? "text-ok" : "text-danger"}>
-            {picked === block.answer_index ? "Correct! " : `Answer: ${block.choices[block.answer_index]}. `}
+            {picked === block.answer_index ? l.correct : `${l.answer}${block.choices[block.answer_index]}. `}
           </span>
           {block.explanation}
         </p>
@@ -58,7 +65,8 @@ function Callout({ icon: Icon, label, children }: { icon: typeof Target; label: 
 }
 
 /** Renders any entry, whatever formats the AI chose for it. */
-export function EntryContent({ blocks }: { blocks: Block[] }) {
+export function EntryContent({ blocks, lang = "en" }: { blocks: Block[]; lang?: Lang }) {
+  const l = L[lang];
   const resources = blocks.filter((b): b is Extract<Block, { type: "resource" }> => b.type === "resource");
   return (
     <div className="space-y-4">
@@ -79,19 +87,19 @@ export function EntryContent({ blocks }: { blocks: Block[] }) {
             );
           case "fact":
             return (
-              <Callout key={i} icon={Lightbulb} label="Did you know?">
+              <Callout key={i} icon={Lightbulb} label={l.fact}>
                 {b.body}
               </Callout>
             );
           case "challenge":
             return (
-              <Callout key={i} icon={Target} label="Today's challenge">
+              <Callout key={i} icon={Target} label={l.challenge}>
                 {b.body}
               </Callout>
             );
           case "activity":
             return (
-              <Callout key={i} icon={ListChecks} label="Steps">
+              <Callout key={i} icon={ListChecks} label={l.steps}>
                 {b.body && <p className="mb-2">{b.body}</p>}
                 <ol className="list-decimal space-y-1 pl-5">
                   {b.steps.map((s, j) => (
@@ -101,12 +109,12 @@ export function EntryContent({ blocks }: { blocks: Block[] }) {
               </Callout>
             );
           case "quiz":
-            return <Quiz key={i} block={b} />;
+            return <Quiz key={i} block={b} l={l} />;
           case "image_prompt":
             return (
               <p key={i} className="flex gap-2 text-sm text-faint">
                 <ImageIcon size={16} className="mt-0.5 shrink-0" />
-                <span>Illustration idea: {b.description}</span>
+                <span>{l.image} {b.description}</span>
               </p>
             );
           case "custom":
@@ -121,7 +129,7 @@ export function EntryContent({ blocks }: { blocks: Block[] }) {
       })}
       {resources.length > 0 && (
         <div>
-          <p className="text-xs uppercase tracking-wider text-faint">To go further</p>
+          <p className="text-xs uppercase tracking-wider text-faint">{l.more}</p>
           <ul className="mt-2 space-y-1">
             {resources.map((r, i) => (
               <li key={i}>
