@@ -256,8 +256,8 @@ fn brief_prompt(req: &GenerateRequest, today: NaiveDate) -> String {
     let mut s = format!(
         "Today is {today}. Analyse this calendar request and extract a brief.\n\nREQUEST:\n\"\"\"{}\"\"\"\n\n\
 Rules:\n\
-- title: short and catchy, in the request's language.\n\
-- description: 1-2 sentences for visitors.\n\
+- title: short and catchy, in the calendar's language.\n\
+- description: 1-2 sentences for visitors, in the calendar's language (the request's language unless another is asked).\n\
 - audience: who the calendar is for, in words (e.g. \"8-year-old children\", \"small business owners\").\n\
 - language: ISO code of the language the request is written in (e.g. en, fr), unless another language is asked.\n\
 - entry_count: number of entries asked (e.g. \"24-day\" = 24, \"12-month\" = 12, \"one year daily\" = 365). Default 7 if unclear.\n\
@@ -527,6 +527,21 @@ pub fn find_warnings(entries: &BTreeMap<u32, GenEntry>, expected: u32) -> Vec<St
     warnings
 }
 
+/// "A) Paris", "b. Paris", "1) Paris" -> "Paris" (the UI lays out choices itself).
+fn strip_choice_label(c: &str) -> String {
+    let t = c.trim();
+    let mut chars = t.chars();
+    if let (Some(first), Some(sep)) = (chars.next(), chars.next()) {
+        if first.is_ascii_alphanumeric() && matches!(sep, ')' | '.' | ':') {
+            let rest = chars.as_str().trim_start();
+            if !rest.is_empty() {
+                return rest.to_string();
+            }
+        }
+    }
+    t.to_string()
+}
+
 fn to_blocks(e: &GenEntry) -> Vec<Block> {
     let mut blocks = vec![];
     let ct = e.content_type.to_lowercase();
@@ -550,7 +565,7 @@ fn to_blocks(e: &GenEntry) -> Vec<Block> {
     if is_quiz(e) && quiz_ok(&e.quiz) {
         blocks.push(Block::Quiz {
             question: e.quiz.question.trim().into(),
-            choices: e.quiz.choices.iter().map(|c| c.trim().to_string()).collect(),
+            choices: e.quiz.choices.iter().map(|c| strip_choice_label(c)).collect(),
             answer_index: e.quiz.answer_index as usize,
             explanation: Some(e.quiz.explanation.trim().to_string()).filter(|s| !s.is_empty()),
         });
@@ -599,7 +614,8 @@ pub async fn generate_calendar(
     let dates: Vec<NaiveDate> = (0..n).map(|i| entry_date(&schedule, i)).collect();
     let plan: Plan =
         ask(ai, model, plan_prompt(&brief, &req.prompt, &dates), plan_schema(), 0.6, progress, "Plan").await?;
-    let plan = normalise_plan(plan, n);
+    let mut plan = normalise_plan(plan, n);
+    fix_plan_duplicates(ai, model, &brief, &mut plan, progress).await;
     progress.plan(&plan);
 
     // 3. Write, batch by batch
@@ -682,6 +698,62 @@ pub async fn generate_calendar(
         updated_at: now,
     };
     Ok(cal)
+}
+
+/// Indexes whose planned title repeats an earlier one (or is a placeholder).
+pub fn duplicate_plan_entries(plan: &Plan) -> Vec<u32> {
+    let mut seen = HashSet::new();
+    plan.entries
+        .iter()
+        .filter(|e| !seen.insert(norm_title(&e.title)) || e.title.starts_with("Entry "))
+        .map(|e| e.index)
+        .collect()
+}
+
+/// Small models sometimes loop and repeat the start of the plan: ask once for
+/// fresh, distinct entries in place of the repeated ones. Never fatal.
+async fn fix_plan_duplicates(ai: &dyn AiProvider, model: &str, brief: &Brief, plan: &mut Plan, progress: &dyn Progress) {
+    let dups = duplicate_plan_entries(plan);
+    if dups.is_empty() {
+        return;
+    }
+    progress.log(&format!("Plan: replacing {} repeated entries", dups.len()));
+    let outline: String = plan
+        .entries
+        .iter()
+        .map(|e| {
+            let mark = if dups.contains(&e.index) { "  <- REPLACE" } else { "" };
+            format!("{}. {} ({}){mark}", e.index, e.title, e.content_type)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let prompt = format!(
+        "{}\n\nCURRENT OUTLINE:\n{outline}\n\nThe entries marked REPLACE repeat earlier ones or are empty. \
+Propose new entries for exactly these indexes: {:?}. Each must be new, distinct from every other title, \
+and fit the progression at its position (later entries are more advanced). Return them in \"entries\"; \
+\"sections\" can be an empty list.",
+        brief_context(brief),
+        dups
+    );
+    match ask::<Plan>(ai, model, prompt, plan_schema(), 0.8, progress, "Plan repair").await {
+        Ok(fix) => {
+            for (pos, mut e) in fix.entries.into_iter().enumerate() {
+                if !dups.contains(&e.index) {
+                    match dups.get(pos) {
+                        Some(i) => e.index = *i,
+                        None => continue,
+                    }
+                }
+                let taken = plan.entries.iter().any(|p| p.index != e.index && norm_title(&p.title) == norm_title(&e.title));
+                if !taken && !e.title.trim().is_empty() {
+                    if let Some(slot) = plan.entries.iter_mut().find(|p| p.index == e.index) {
+                        *slot = e;
+                    }
+                }
+            }
+        }
+        Err(e) => progress.log(&format!("Plan repair failed: {e}")),
+    }
 }
 
 async fn write_batch(
@@ -848,6 +920,21 @@ mod tests {
         let w = find_warnings(&m, 2);
         assert!(w.iter().any(|x| x.contains("same title")));
         assert!(w.iter().any(|x| x.contains("very similar")));
+    }
+
+    #[test]
+    fn choice_labels_are_stripped() {
+        assert_eq!(strip_choice_label("A) UFC 1 (1993)"), "UFC 1 (1993)");
+        assert_eq!(strip_choice_label("b. Paris"), "Paris");
+        assert_eq!(strip_choice_label("1993"), "1993");
+        assert_eq!(strip_choice_label("6"), "6");
+    }
+
+    #[test]
+    fn plan_duplicates_are_found() {
+        let e = |i: u32, t: &str| PlannedEntry { index: i, title: t.into(), content_type: "x".into(), summary: "".into() };
+        let plan = Plan { sections: vec![], entries: vec![e(1, "Intro"), e(2, "Loops"), e(3, "intro!"), e(4, "Entry 4")] };
+        assert_eq!(duplicate_plan_entries(&plan), vec![3, 4]);
     }
 
     #[test]

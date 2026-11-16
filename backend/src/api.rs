@@ -70,8 +70,19 @@ async fn ai_status(State(s): State<AppState>) -> Json<serde_json::Value> {
     let selected = settings
         .model
         .filter(|m| status.models.iter().any(|x| &x.name == m))
-        .or_else(|| status.models.first().map(|m| m.name.clone()));
+        .or_else(|| preferred_model(&status.models));
     Json(json!({ "status": status, "selected_model": selected }))
+}
+
+/// Default model when the user has not chosen one: models known to follow
+/// JSON schemas well first, then the first installed one.
+fn preferred_model(models: &[crate::ai::ModelInfo]) -> Option<String> {
+    const PREFERRED: &[&str] = &["qwen2.5", "qwen3", "llama3.1", "mistral-nemo", "gemma", "hermes3"];
+    PREFERRED
+        .iter()
+        .find_map(|p| models.iter().find(|m| m.name.starts_with(p)))
+        .or(models.first())
+        .map(|m| m.name.clone())
 }
 
 async fn get_settings(State(s): State<AppState>) -> Json<Settings> {
@@ -210,7 +221,7 @@ async fn start_generation(
         .clone()
         .or(settings.model.clone())
         .filter(|m| status.models.iter().any(|x| &x.name == m))
-        .or_else(|| status.models.first().map(|m| m.name.clone()))
+        .or_else(|| preferred_model(&status.models))
         .ok_or_else(|| bad("No text model is installed in Ollama. Try: ollama pull qwen2.5:7b"))?;
 
     let id = s.jobs.start(&model).map_err(|_| {

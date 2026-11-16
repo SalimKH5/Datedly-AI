@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { CalendarPlus } from "lucide-react";
 import type { CalendarSummary } from "@/lib/api";
@@ -48,11 +49,16 @@ export function CalendarsPanel({ calendars, offline }: { calendars: CalendarSumm
       ) : (
         <ul className="mt-4 divide-y divide-line">
           {shown.map((c) => (
-            <li key={c.id} className="flex items-center justify-between gap-4 py-3.5">
+            <li key={c.id}>
+              <Link
+                href={`/calendar?id=${c.id}`}
+                className="-mx-3 flex items-center justify-between gap-4 rounded-2xl px-3 py-3.5 transition-colors hover:bg-surface-strong"
+              >
               <div className="min-w-0">
                 <p className="truncate">{c.title}</p>
                 <p className="text-sm text-muted">
-                  {c.entry_count} entries · from {c.start_date}
+                  {c.entry_count} entries · {c.start_date}
+                  {c.end_date && c.end_date !== c.start_date ? ` → ${c.end_date}` : ""}
                 </p>
               </div>
               <span
@@ -62,6 +68,7 @@ export function CalendarsPanel({ calendars, offline }: { calendars: CalendarSumm
               >
                 {c.status === "published" ? "Published" : "Draft"}
               </span>
+              </Link>
             </li>
           ))}
         </ul>

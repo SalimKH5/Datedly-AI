@@ -1,22 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-
 import { TerminalSquare } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { Greeting } from "@/components/Greeting";
 import { PromptComposer } from "@/components/PromptComposer";
+import { GenerationProgress } from "@/components/GenerationProgress";
 import { AiEngineCard } from "@/components/AiEngineCard";
 import { MiniMonth } from "@/components/MiniMonth";
 import { CalendarsPanel } from "@/components/CalendarsPanel";
 import { api, ApiError, type AiStatus, type CalendarSummary } from "@/lib/api";
 
-type Loaded = { ai: AiStatus; calendars: CalendarSummary[] } | { offline: true } | null;
+type Loaded =
+  | { ai: AiStatus; calendars: CalendarSummary[]; runningJob: string | null }
+  | { offline: true }
+  | null;
 
 async function fetchState(): Promise<Loaded> {
   try {
-    const [ai, calendars] = await Promise.all([api.aiStatus(), api.listCalendars()]);
-    return { ai, calendars };
+    const [ai, calendars, current] = await Promise.all([api.aiStatus(), api.listCalendars(), api.currentJob()]);
+    return { ai, calendars, runningJob: current.job?.id ?? null };
   } catch (e) {
     return e instanceof ApiError && e.offline ? { offline: true } : null;
   }
@@ -26,15 +29,22 @@ export default function Home() {
   const [ai, setAi] = useState<AiStatus | null>(null);
   const [calendars, setCalendars] = useState<CalendarSummary[]>([]);
   const [offline, setOffline] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobRunning, setJobRunning] = useState(false);
 
   const apply = useCallback((r: Loaded) => {
     if (!r) return;
     if ("offline" in r) {
       setOffline(true);
-    } else {
-      setAi(r.ai);
-      setCalendars(r.calendars);
-      setOffline(false);
+      return;
+    }
+    setAi(r.ai);
+    setCalendars(r.calendars);
+    setOffline(false);
+    // Resume showing a generation started before a page reload.
+    if (r.runningJob) {
+      setJobId(r.runningJob);
+      setJobRunning(true);
     }
   }, []);
   const load = useCallback(() => fetchState().then(apply), [apply]);
@@ -42,6 +52,17 @@ export default function Home() {
   useEffect(() => {
     fetchState().then(apply);
   }, [apply]);
+
+  const onStarted = useCallback((id: string) => {
+    setJobId(id);
+    setJobRunning(true);
+    document.getElementById("top")?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+  const onFinished = useCallback(() => {
+    setJobRunning(false);
+    api.listCalendars().then(setCalendars, () => {});
+  }, []);
+  const onDismiss = useCallback(() => setJobId(null), []);
 
   const stats = [
     { label: "Calendars", value: calendars.length },
@@ -71,8 +92,14 @@ export default function Home() {
         )}
 
         <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
-          <div className="space-y-6">
-            <PromptComposer aiReady={!!ai?.status.available} model={ai?.selected_model ?? null} />
+          <div className="min-w-0 space-y-6">
+            {jobId && <GenerationProgress jobId={jobId} onFinished={onFinished} onDismiss={onDismiss} />}
+            <PromptComposer
+              aiReady={!!ai?.status.available}
+              model={ai?.selected_model ?? null}
+              busy={jobRunning}
+              onStarted={onStarted}
+            />
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {stats.map((s) => (
                 <div key={s.label} className="glass rounded-3xl p-5">
@@ -84,7 +111,7 @@ export default function Home() {
             <CalendarsPanel calendars={calendars} offline={offline} />
           </div>
           <div className="space-y-6">
-            <MiniMonth />
+            <MiniMonth marked={calendars.map((c) => c.start_date)} />
             <AiEngineCard key={ai?.status.endpoint ?? "none"} ai={ai} offline={offline} onRefresh={load} />
           </div>
         </div>

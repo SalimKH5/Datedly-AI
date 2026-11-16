@@ -35,6 +35,91 @@ export interface AiStatus {
   selected_model: string | null;
 }
 
+export type Block =
+  | { type: "text" | "fact" | "story" | "challenge"; body: string }
+  | { type: "activity"; body: string; steps: string[] }
+  | { type: "quiz"; question: string; choices: string[]; answer_index: number; explanation?: string | null }
+  | { type: "resource"; label: string; url: string | null }
+  | { type: "image_prompt"; description: string }
+  | { type: "custom"; label: string; data: unknown };
+
+export interface Entry {
+  id: string;
+  index: number;
+  title: string;
+  date: string;
+  content_type: string;
+  blocks: Block[];
+  metadata: Record<string, unknown>;
+  status: "scheduled" | "hidden";
+}
+
+export interface PlanSection {
+  title: string;
+  from: number;
+  to: number;
+  focus: string;
+}
+
+export interface Calendar {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  prompt: string;
+  language: string;
+  theme: string;
+  schedule: { start_date: string; interval: { kind: string }; timezone: string; unlock_time: string };
+  status: CalendarStatus;
+  entries: Entry[];
+  generation: {
+    provider: string;
+    model: string;
+    duration_secs: number;
+    warnings: string[];
+    sections: PlanSection[];
+    audience: string;
+    tone: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type Stage = "understanding" | "planning" | "writing" | "validating" | "saving" | "done";
+
+export interface Job {
+  id: string;
+  status: "running" | "done" | "failed";
+  stage: Stage;
+  message: string;
+  done: number;
+  total: number;
+  model: string;
+  log: string[];
+  brief: {
+    title: string;
+    description: string;
+    audience: string;
+    tone: string;
+    language: string;
+    entry_count: number;
+    interval: string;
+    start_date: string;
+    content_formats: string[];
+    theme: string;
+  } | null;
+  plan: { sections: PlanSection[]; entries: { index: number; title: string; content_type: string }[] } | null;
+  calendar_id: string | null;
+  error: string | null;
+}
+
+export interface GenerateInput {
+  prompt: string;
+  entry_count?: number;
+  start_date?: string;
+  language?: string;
+}
+
 export class ApiError extends Error {
   constructor(message: string, public offline = false) {
     super(message);
@@ -64,4 +149,9 @@ export const api = {
   saveSettings: (s: { ollama_endpoint?: string; model?: string }) =>
     request("/api/settings", { method: "PUT", body: JSON.stringify(s) }),
   listCalendars: () => request<CalendarSummary[]>("/api/calendars"),
+  getCalendar: (id: string) => request<Calendar>(`/api/calendars/${encodeURIComponent(id)}`),
+  generate: (input: GenerateInput) =>
+    request<{ job_id: string; model: string }>("/api/generate", { method: "POST", body: JSON.stringify(input) }),
+  job: (id: string) => request<Job>(`/api/jobs/${encodeURIComponent(id)}`),
+  currentJob: () => request<{ job: Job | null }>("/api/jobs/current"),
 };
