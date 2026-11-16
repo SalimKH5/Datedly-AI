@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { Wrench } from "lucide-react";
+import { CircleHelp, Wrench } from "lucide-react";
 import { setLang, useT, type Lang } from "@/lib/i18n";
 
 export function LangSwitch() {
@@ -51,11 +51,20 @@ export function TopBar({ active }: { active?: "studio" | "toolkit" }) {
         </Link>
         <Link
           href="/toolkit"
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors ${
+          aria-label={t("nav.toolkit")}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm transition-colors ${
             active === "toolkit" ? "border-accent/60 bg-accent/15 text-ink" : "border-line text-muted hover:text-ink"
           }`}
         >
-          <Wrench size={15} /> {t("nav.toolkit")}
+          <Wrench size={15} /> <span className="hidden sm:inline">{t("nav.toolkit")}</span>
+        </Link>
+        <Link
+          href="/toolkit#guide"
+          aria-label={t("nav.help")}
+          title={t("nav.help")}
+          className="grid h-9 w-9 place-items-center rounded-full border border-line text-muted transition-colors hover:border-highlight/60 hover:text-highlight"
+        >
+          <CircleHelp size={17} />
         </Link>
         <LangSwitch />
       </nav>

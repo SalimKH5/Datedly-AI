@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowUpRight, BookOpen, Cpu, Keyboard, LifeBuoy, ListChecks, Pencil, X } from "lucide-react";
 import { TopBar } from "@/components/TopBar";
 import { PromptBuilder } from "@/components/toolkit/PromptBuilder";
+import { HowToGuide } from "@/components/toolkit/HowToGuide";
 import { ToolGuide, type ToolId } from "@/components/toolkit/ToolGuides";
 import { api } from "@/lib/api";
 import { useT, type Key } from "@/lib/i18n";
@@ -127,6 +128,11 @@ export default function ToolkitPage() {
             </article>
           );
         })}
+      </div>
+
+      {/* How to use the app, step by step */}
+      <div className="mt-16">
+        <HowToGuide />
       </div>
 
       {/* Prompt builder + tool grid */}

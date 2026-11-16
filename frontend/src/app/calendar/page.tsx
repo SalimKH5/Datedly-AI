@@ -12,6 +12,7 @@ import { TopBar } from "@/components/TopBar";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { CalendarEditor } from "@/components/editor/CalendarEditor";
 import { ConfirmDialog } from "@/components/editor/ui";
+import { FLAGS, setFlag } from "@/lib/flags";
 
 function formatDate(iso: string, opts: Intl.DateTimeFormatOptions, locale: string) {
   try {
@@ -206,6 +207,11 @@ function CalendarView() {
   useEffect(() => {
     if (id) load(id);
   }, [id, load]);
+
+  // Onboarding: remember that the editor has been discovered.
+  useEffect(() => {
+    if (mode === "edit") setFlag(FLAGS.editorOpened);
+  }, [mode]);
 
   const dirty = useMemo(() => !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved), [draft, saved]);
   const update = useCallback((fn: (c: Calendar) => Calendar) => setDraft((d) => (d ? fn(d) : d)), []);

@@ -11,6 +11,7 @@ import { GenerationProgress } from "@/components/GenerationProgress";
 import { AiEngineCard } from "@/components/AiEngineCard";
 import { MiniMonth } from "@/components/MiniMonth";
 import { CalendarsPanel } from "@/components/CalendarsPanel";
+import { GettingStarted } from "@/components/GettingStarted";
 import { api, ApiError, type AiStatus, type CalendarSummary } from "@/lib/api";
 import { useT, type Key } from "@/lib/i18n";
 
@@ -125,6 +126,13 @@ function Studio() {
             <CalendarsPanel calendars={calendars} offline={offline} />
           </div>
           <div className="space-y-6">
+            <GettingStarted
+              offline={!ai}
+              aiConnected={!!ai?.status.available}
+              hasModel={!!ai?.selected_model}
+              calendarCount={calendars.length}
+              firstCalendarId={calendars[0]?.id ?? null}
+            />
             <MiniMonth marked={calendars.map((c) => c.start_date)} />
             <AiEngineCard key={ai?.status.endpoint ?? "none"} ai={ai} offline={offline} onRefresh={load} />
           </div>

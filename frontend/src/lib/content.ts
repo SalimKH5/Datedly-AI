@@ -171,3 +171,114 @@ export function buildPrompt(
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const joinEn = (a: string[]) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a.at(-1)}`);
 const joinFr = (a: string[]) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} et ${a.at(-1)}`);
+
+export interface GuideStep {
+  title: string;
+  body: string;
+  tip?: string;
+  code?: string;
+  href?: string;
+  cta?: string;
+}
+
+/** Step-by-step "how to use the app" guide shown in the toolkit. */
+export const GUIDE: Record<Lang, GuideStep[]> = {
+  en: [
+    {
+      title: "Start the studio",
+      body: "Datedly runs on your computer. Open two terminals: one for the Rust API, one for the interface, then open http://localhost:3000.",
+      code: "cd backend && cargo run\ncd frontend && npm run dev",
+      tip: "If the home page says “The local studio is not running”, the first command is not running.",
+    },
+    {
+      title: "Connect the AI",
+      body: "Start Ollama and install at least one text model. The AI engine card on the home page turns green (“Ollama connected”) and lists your models: pick one.",
+      code: "ollama pull qwen2.5:7b",
+      tip: "qwen2.5:7b gives the best results. Smaller models are faster but repeat themselves more.",
+      href: "/#ai",
+      cta: "Open the AI engine",
+    },
+    {
+      title: "Describe your idea",
+      body: "In “Create a calendar”, write one or two sentences: the topic, for whom, how long, which formats, which tone. Click an example to start faster.",
+      tip: "Advanced settings let you force the number of entries, the start date or the language. Leave them empty and the AI decides.",
+      href: "/#create",
+      cta: "Write my idea",
+    },
+    {
+      title: "Watch it being built",
+      body: "Click Generate calendar (or Ctrl+Enter). Five steps light up: Understand, Plan, Write, Check, Build. The plan appears as soon as it is ready.",
+      tip: "Count about 1 minute per 6 entries. You can reload the page: the progress comes back.",
+    },
+    {
+      title: "Review the preview",
+      body: "Click “Open my calendar”. Entries are grouped by section; click a tile to read it, answer the quizzes, check the facts.",
+      tip: "Yellow notes list what the checker found (similar entries, entries to complete).",
+      href: "/#calendars",
+      cta: "See my calendars",
+    },
+    {
+      title: "Edit what you want",
+      body: "Switch to the Edit tab. Change the title, the theme and the schedule at the top; pick an entry on the left to edit its text, quiz, steps or links on the right. Drag entries to reorder them.",
+      tip: "Dates follow the schedule: moving an entry gives it the date of its new place.",
+    },
+    {
+      title: "Rewrite with AI, then save",
+      body: "On any entry, type an instruction (“make it easier”, “turn it into a quiz”) or click a quick button. Review the new version, then click Save or press Ctrl+S.",
+      tip: "Nothing is stored until you save. “Regenerate all” rewrites the whole calendar from your original idea.",
+    },
+    {
+      title: "Publish (coming next)",
+      body: "Soon you will publish the calendar: each entry unlocks on its date, checked by the server, so visitors can never read tomorrow's surprise today.",
+    },
+  ],
+  fr: [
+    {
+      title: "Lancer le studio",
+      body: "Datedly tourne sur votre ordinateur. Ouvrez deux terminaux : un pour l'API Rust, un pour l'interface, puis ouvrez http://localhost:3000.",
+      code: "cd backend && cargo run\ncd frontend && npm run dev",
+      tip: "Si l'accueil affiche « Le studio local n'est pas lancé », c'est la première commande qui ne tourne pas.",
+    },
+    {
+      title: "Brancher l'IA",
+      body: "Lancez Ollama et installez au moins un modèle de texte. La carte Moteur IA de l'accueil passe au vert (« Ollama connecté ») et liste vos modèles : choisissez-en un.",
+      code: "ollama pull qwen2.5:7b",
+      tip: "qwen2.5:7b donne les meilleurs résultats. Les petits modèles sont plus rapides mais se répètent davantage.",
+      href: "/#ai",
+      cta: "Ouvrir le moteur IA",
+    },
+    {
+      title: "Décrire votre idée",
+      body: "Dans « Créer un calendrier », écrivez une ou deux phrases : le sujet, pour qui, la durée, les formats, le ton. Cliquez sur un exemple pour aller plus vite.",
+      tip: "Les réglages avancés imposent le nombre de cases, la date de début ou la langue. Laissez-les vides : l'IA décide.",
+      href: "/#create",
+      cta: "Écrire mon idée",
+    },
+    {
+      title: "Le regarder se construire",
+      body: "Cliquez sur Générer le calendrier (ou Ctrl+Entrée). Cinq étapes s'allument : Comprendre, Planifier, Rédiger, Vérifier, Assembler. Le plan s'affiche dès qu'il est prêt.",
+      tip: "Comptez environ 1 minute pour 6 cases. Vous pouvez recharger la page : la progression revient.",
+    },
+    {
+      title: "Relire l'aperçu",
+      body: "Cliquez sur « Ouvrir mon calendrier ». Les cases sont rangées par section ; cliquez sur une case pour la lire, répondre aux quiz, vérifier les faits.",
+      tip: "Les encadrés jaunes listent ce que la vérification a trouvé (cases proches, cases à compléter).",
+      href: "/#calendars",
+      cta: "Voir mes calendriers",
+    },
+    {
+      title: "Modifier ce que vous voulez",
+      body: "Passez sur l'onglet Modifier. En haut : titre, thème et planning ; à gauche, choisissez une case pour modifier à droite son texte, son quiz, ses étapes ou ses liens. Faites glisser les cases pour les réordonner.",
+      tip: "Les dates suivent le planning : une case déplacée prend la date de sa nouvelle place.",
+    },
+    {
+      title: "Réécrire avec l'IA, puis enregistrer",
+      body: "Sur une case, tapez une consigne (« plus simple », « en faire un quiz ») ou cliquez sur un raccourci. Relisez la nouvelle version, puis cliquez sur Enregistrer ou faites Ctrl+S.",
+      tip: "Rien n'est gardé avant l'enregistrement. « Tout régénérer » réécrit tout le calendrier à partir de votre idée de départ.",
+    },
+    {
+      title: "Publier (bientôt)",
+      body: "Bientôt, vous publierez le calendrier : chaque case s'ouvrira à sa date, vérifiée par le serveur, pour que personne ne lise la surprise de demain dès aujourd'hui.",
+    },
+  ],
+};
