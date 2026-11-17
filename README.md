@@ -131,11 +131,11 @@ Frontend: `NEXT_PUBLIC_API_URL` (see `frontend/.env.example`).
 ## Tests and CI
 
 ```bash
-cd backend && cargo test            # unit tests: scheduling, validation, crypto, Ollama client
+cd backend && cargo fmt --check && cargo clippy -- -D warnings && cargo test   # unit tests: scheduling, validation, crypto, Ollama client
 cd frontend && npm run lint && npx tsc --noEmit && npm run build
 ```
 
-The **CI** workflow runs both on every push and pull request.
+The **CI** workflow runs both on every push and pull request; Dependabot keeps Cargo, npm and Actions dependencies up to date.
 
 ## Roadmap
 
@@ -147,4 +147,4 @@ The **CI** workflow runs both on every push and pull request.
 
 ## License
 
-No license has been chosen yet. All rights reserved by the author until a license file is added.
+[MIT](LICENSE)
