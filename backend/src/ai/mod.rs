@@ -94,9 +94,12 @@ mod tests {
     #[test]
     fn loose_json_parsing() {
         assert!(parse_json_loose(r#"{"a":1}"#).is_ok());
-        assert!(parse_json_loose("Sure! ```json
+        assert!(parse_json_loose(
+            "Sure! ```json
 {\"a\":1}
-``` done").is_ok());
+``` done"
+        )
+        .is_ok());
         assert!(parse_json_loose("no json here").is_err());
     }
 }

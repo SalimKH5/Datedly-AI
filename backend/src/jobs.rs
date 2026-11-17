@@ -74,7 +74,12 @@ impl Jobs {
     }
 
     pub fn running(&self) -> Option<Job> {
-        self.0.lock().unwrap().values().find(|j| j.status == JobStatus::Running).cloned()
+        self.0
+            .lock()
+            .unwrap()
+            .values()
+            .find(|j| j.status == JobStatus::Running)
+            .cloned()
     }
 
     pub fn update(&self, id: Uuid, f: impl FnOnce(&mut Job)) {
@@ -84,7 +89,10 @@ impl Jobs {
     }
 
     pub fn handle(&self, id: Uuid) -> JobHandle {
-        JobHandle { jobs: self.clone(), id }
+        JobHandle {
+            jobs: self.clone(),
+            id,
+        }
     }
 }
 

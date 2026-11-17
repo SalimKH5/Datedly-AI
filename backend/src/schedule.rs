@@ -58,11 +58,20 @@ mod tests {
     #[test]
     fn dates_follow_interval() {
         let d = sched(Interval::Daily);
-        assert_eq!(entry_date(&d, 23), NaiveDate::from_ymd_opt(2026, 12, 24).unwrap());
+        assert_eq!(
+            entry_date(&d, 23),
+            NaiveDate::from_ymd_opt(2026, 12, 24).unwrap()
+        );
         let w = sched(Interval::Weekly);
-        assert_eq!(entry_date(&w, 2), NaiveDate::from_ymd_opt(2026, 12, 15).unwrap());
+        assert_eq!(
+            entry_date(&w, 2),
+            NaiveDate::from_ymd_opt(2026, 12, 15).unwrap()
+        );
         let m = sched(Interval::Monthly);
-        assert_eq!(entry_date(&m, 11), NaiveDate::from_ymd_opt(2027, 11, 1).unwrap());
+        assert_eq!(
+            entry_date(&m, 11),
+            NaiveDate::from_ymd_opt(2027, 11, 1).unwrap()
+        );
     }
 
     #[test]

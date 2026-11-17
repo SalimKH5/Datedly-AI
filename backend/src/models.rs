@@ -24,7 +24,9 @@ pub enum Interval {
     Weekly,
     Monthly,
     /// Every `days` days.
-    EveryNDays { days: u32 },
+    EveryNDays {
+        days: u32,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -51,11 +53,23 @@ fn default_unlock_time() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Block {
-    Text { body: String },
-    Fact { body: String },
-    Story { body: String },
-    Challenge { body: String },
-    Activity { body: String, #[serde(default)] steps: Vec<String> },
+    Text {
+        body: String,
+    },
+    Fact {
+        body: String,
+    },
+    Story {
+        body: String,
+    },
+    Challenge {
+        body: String,
+    },
+    Activity {
+        body: String,
+        #[serde(default)]
+        steps: Vec<String>,
+    },
     Quiz {
         question: String,
         choices: Vec<String>,
@@ -63,10 +77,18 @@ pub enum Block {
         #[serde(default)]
         explanation: Option<String>,
     },
-    Resource { label: String, url: Option<String> },
-    ImagePrompt { description: String },
+    Resource {
+        label: String,
+        url: Option<String>,
+    },
+    ImagePrompt {
+        description: String,
+    },
     /// Escape hatch for formats the AI invents for a specific idea.
-    Custom { label: String, data: serde_json::Value },
+    Custom {
+        label: String,
+        data: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -255,7 +277,10 @@ mod tests {
     fn slugify_works() {
         assert_eq!(slugify("24-Day MMA Advent!"), "24-day-mma-advent");
         assert_eq!(slugify("  ***  "), "calendar");
-        assert_eq!(slugify("Noël : les bases avancées"), "noel-les-bases-avancees");
+        assert_eq!(
+            slugify("Noël : les bases avancées"),
+            "noel-les-bases-avancees"
+        );
     }
 
     #[test]

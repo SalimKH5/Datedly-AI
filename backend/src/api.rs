@@ -14,13 +14,17 @@ use uuid::Uuid;
 
 use crate::{
     ai::{ollama::Ollama, AiProvider},
-    generate::{generate_calendar, regenerate_entry, GenerateRequest, RegenerateEntryRequest, Stage},
+    generate::{
+        generate_calendar, regenerate_entry, GenerateRequest, RegenerateEntryRequest, Stage,
+    },
     jobs::{JobStatus, Jobs},
-    models::{slugify, Calendar, CalendarStatus, Demo, Entry, EntryStatus, NewCalendar, Publication},
+    models::{
+        slugify, Calendar, CalendarStatus, Demo, Entry, EntryStatus, NewCalendar, Publication,
+    },
     publish::{bundle_path, public_from_calendar, seal, KeySource, MasterKey},
     schedule::entry_date,
-    validate::sanitize_calendar,
     store::{Settings, Store},
+    validate::sanitize_calendar,
 };
 
 #[derive(Clone)]
@@ -52,7 +56,10 @@ fn not_found() -> ApiError {
 
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route("/api/health", get(|| async { Json(json!({ "ok": true, "service": "datedly" })) }))
+        .route(
+            "/api/health",
+            get(|| async { Json(json!({ "ok": true, "service": "datedly" })) }),
+        )
         .route("/api/ai/status", get(ai_status))
         .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/generate", post(start_generation))
@@ -61,13 +68,18 @@ pub fn router(state: AppState) -> Router {
         .route("/api/calendars", get(list_calendars).post(create_calendar))
         .route(
             "/api/calendars/{id}",
-            get(get_calendar).put(update_calendar).delete(delete_calendar),
+            get(get_calendar)
+                .put(update_calendar)
+                .delete(delete_calendar),
         )
         .route("/api/calendars/{id}/regenerate", post(regenerate_calendar))
         .route("/api/calendars/{id}/publish", post(publish_calendar))
         .route("/api/calendars/{id}/unpublish", post(unpublish_calendar))
         .route("/api/public/{slug}", get(public_view))
-        .route("/api/calendars/{id}/entries/regenerate", post(regenerate_one_entry))
+        .route(
+            "/api/calendars/{id}/entries/regenerate",
+            post(regenerate_one_entry),
+        )
         .with_state(state)
 }
 
@@ -85,7 +97,14 @@ async fn ai_status(State(s): State<AppState>) -> Json<serde_json::Value> {
 /// Default model when the user has not chosen one: models known to follow
 /// JSON schemas well first, then the first installed one.
 fn preferred_model(models: &[crate::ai::ModelInfo]) -> Option<String> {
-    const PREFERRED: &[&str] = &["qwen2.5", "qwen3", "llama3.1", "mistral-nemo", "gemma", "hermes3"];
+    const PREFERRED: &[&str] = &[
+        "qwen2.5",
+        "qwen3",
+        "llama3.1",
+        "mistral-nemo",
+        "gemma",
+        "hermes3",
+    ];
     PREFERRED
         .iter()
         .find_map(|p| models.iter().find(|m| m.name.starts_with(p)))
@@ -116,7 +135,11 @@ async fn put_settings(
         settings.ollama_endpoint = ep;
     }
     if let Some(m) = input.model {
-        settings.model = if m.trim().is_empty() { None } else { Some(m.trim().chars().take(120).collect()) };
+        settings.model = if m.trim().is_empty() {
+            None
+        } else {
+            Some(m.trim().chars().take(120).collect())
+        };
     }
     s.store.save_settings(&settings).await?;
     Ok(Json(settings))
@@ -218,14 +241,19 @@ async fn delete_calendar(
 // ---------------------------------------------------------------- generation
 
 /// Picks the provider and model: requested > saved > preferred installed one.
-async fn resolve_model(s: &AppState, requested: Option<String>) -> Result<(Ollama, String), ApiError> {
+async fn resolve_model(
+    s: &AppState,
+    requested: Option<String>,
+) -> Result<(Ollama, String), ApiError> {
     let settings = s.store.settings().await;
     let ollama = Ollama::new(&settings.ollama_endpoint);
     let status = ollama.status().await;
     if !status.available {
         return Err(ApiError(
             StatusCode::SERVICE_UNAVAILABLE,
-            status.error.unwrap_or_else(|| "Ollama is not reachable".into()),
+            status
+                .error
+                .unwrap_or_else(|| "Ollama is not reachable".into()),
         ));
     }
     let model = requested
@@ -243,7 +271,10 @@ async fn start_generation(
     req.validate().map_err(|m| bad(&m))?;
     let (ollama, model) = resolve_model(&s, req.model.clone()).await?;
     let id = spawn_generation(&s, ollama, model.clone(), req, None)?;
-    Ok((StatusCode::ACCEPTED, Json(json!({ "job_id": id, "model": model }))))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "job_id": id, "model": model })),
+    ))
 }
 
 /// Regenerates a whole calendar from its prompt, keeping its id and schedule.
@@ -266,7 +297,10 @@ async fn regenerate_calendar(
     req.validate().map_err(|m| bad(&m))?;
     let (ollama, model) = resolve_model(&s, None).await?;
     let job = spawn_generation(&s, ollama, model.clone(), req, Some(existing))?;
-    Ok((StatusCode::ACCEPTED, Json(json!({ "job_id": job, "model": model }))))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "job_id": job, "model": model })),
+    ))
 }
 
 fn spawn_generation(
@@ -277,32 +311,37 @@ fn spawn_generation(
     target: Option<Calendar>,
 ) -> Result<Uuid, ApiError> {
     let id = s.jobs.start(&model).map_err(|_| {
-        ApiError(StatusCode::CONFLICT, "A calendar is already being generated. Wait for it to finish.".into())
+        ApiError(
+            StatusCode::CONFLICT,
+            "A calendar is already being generated. Wait for it to finish.".into(),
+        )
     })?;
     let (jobs, store, publish) = (s.jobs.clone(), s.store.clone(), s.publish.clone());
     tokio::spawn(async move {
         let handle = jobs.handle(id);
         // Content is never logged: only stages and sizes.
         tracing::info!("generation {id} started with {model}");
-        let result = generate_calendar(&ollama, &model, &req, &handle).await.map(|mut cal| {
-            if let Some(old) = &target {
-                // Same calendar, new content: keep identity, schedule and look.
-                cal.id = old.id;
-                cal.slug = old.slug.clone();
-                cal.created_at = old.created_at;
-                cal.status = old.status;
-                cal.publication = old.publication.clone();
-                cal.theme = old.theme.clone();
-                cal.schedule.interval = old.schedule.interval.clone();
-                cal.schedule.timezone = old.schedule.timezone.clone();
-                cal.schedule.unlock_time = old.schedule.unlock_time.clone();
-                let schedule = cal.schedule.clone();
-                for e in cal.entries.iter_mut() {
-                    e.date = entry_date(&schedule, e.index - 1);
+        let result = generate_calendar(&ollama, &model, &req, &handle)
+            .await
+            .map(|mut cal| {
+                if let Some(old) = &target {
+                    // Same calendar, new content: keep identity, schedule and look.
+                    cal.id = old.id;
+                    cal.slug = old.slug.clone();
+                    cal.created_at = old.created_at;
+                    cal.status = old.status;
+                    cal.publication = old.publication.clone();
+                    cal.theme = old.theme.clone();
+                    cal.schedule.interval = old.schedule.interval.clone();
+                    cal.schedule.timezone = old.schedule.timezone.clone();
+                    cal.schedule.unlock_time = old.schedule.unlock_time.clone();
+                    let schedule = cal.schedule.clone();
+                    for e in cal.entries.iter_mut() {
+                        e.date = entry_date(&schedule, e.index - 1);
+                    }
                 }
-            }
-            cal
-        });
+                cal
+            });
         match result {
             Ok(cal) => match store.save(&cal).await {
                 Ok(()) => {
@@ -344,7 +383,10 @@ async fn regenerate_one_entry(
 ) -> Result<impl IntoResponse, ApiError> {
     let cal = s.store.get(id).await?.ok_or_else(not_found)?;
     if s.jobs.running().is_some() {
-        return Err(ApiError(StatusCode::CONFLICT, "A calendar is being generated. Try again when it is done.".into()));
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            "A calendar is being generated. Try again when it is done.".into(),
+        ));
     }
     let (ollama, model) = resolve_model(&s, None).await?;
     let entry = regenerate_entry(&ollama, &model, &cal, &req)
@@ -353,8 +395,14 @@ async fn regenerate_one_entry(
     Ok(Json(entry))
 }
 
-async fn get_job(State(s): State<AppState>, Path(id): Path<Uuid>) -> Result<impl IntoResponse, ApiError> {
-    s.jobs.get(id).map(Json).ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "Job not found".into()))
+async fn get_job(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    s.jobs
+        .get(id)
+        .map(Json)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "Job not found".into()))
 }
 
 async fn current_job(State(s): State<AppState>) -> impl IntoResponse {
@@ -382,14 +430,24 @@ fn sync_bundle(ctx: &PublishCtx, cal: &Calendar) -> Result<Option<KeySource>, Ap
         }
         return Ok(None);
     }
-    let (key, source) = MasterKey::load_or_create(&ctx.data_dir).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let bundle = seal(cal, &key).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let (key, source) = MasterKey::load_or_create(&ctx.data_dir)
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let bundle =
+        seal(cal, &key).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     std::fs::create_dir_all(&ctx.publish_dir)?;
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(&bundle).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?)?;
+    std::fs::write(
+        &tmp,
+        serde_json::to_vec_pretty(&bundle)
+            .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+    )?;
     std::fs::rename(&tmp, &path)?;
     // Content is never logged: only the slug and the size.
-    tracing::info!("bundle written: {} ({} entries)", cal.slug, bundle.entries.len());
+    tracing::info!(
+        "bundle written: {} ({} entries)",
+        cal.slug,
+        bundle.entries.len()
+    );
     Ok(Some(source))
 }
 
@@ -419,9 +477,17 @@ async fn publish_calendar(
     }
     // A published URL must be unique: suffix the slug if another calendar uses it.
     let others = s.store.all().await?;
-    let taken = |slug: &str| others.iter().any(|o| o.id != cal.id && o.status == CalendarStatus::Published && o.slug == slug);
+    let taken = |slug: &str| {
+        others
+            .iter()
+            .any(|o| o.id != cal.id && o.status == CalendarStatus::Published && o.slug == slug)
+    };
     let base = slugify(&cal.title);
-    let mut slug = if cal.status == CalendarStatus::Published { cal.slug.clone() } else { base.clone() };
+    let mut slug = if cal.status == CalendarStatus::Published {
+        cal.slug.clone()
+    } else {
+        base.clone()
+    };
     let mut n = 2;
     while taken(&slug) {
         slug = format!("{base}-{n}");
@@ -435,22 +501,34 @@ async fn publish_calendar(
     cal.status = CalendarStatus::Published;
     cal.publication = Some(Publication {
         published_at: Utc::now(),
-        demo: input.demo_every_minutes.map(|every| Demo { start: input.demo_start.unwrap_or_else(Utc::now), every_minutes: every }),
+        demo: input.demo_every_minutes.map(|every| Demo {
+            start: input.demo_start.unwrap_or_else(Utc::now),
+            every_minutes: every,
+        }),
     });
     cal.updated_at = Utc::now();
     s.store.save(&cal).await?;
     let source = sync_bundle(&s.publish, &cal)?;
     let key = match source {
         Some(KeySource::Env) => json!({ "source": "env" }),
-        Some(KeySource::File(p)) => json!({ "source": "file", "path": p.display().to_string(), "created": false }),
-        Some(KeySource::Created(p)) => json!({ "source": "file", "path": p.display().to_string(), "created": true }),
+        Some(KeySource::File(p)) => {
+            json!({ "source": "file", "path": p.display().to_string(), "created": false })
+        }
+        Some(KeySource::Created(p)) => {
+            json!({ "source": "file", "path": p.display().to_string(), "created": true })
+        }
         None => json!(null),
     };
     let bundle = bundle_path(&s.publish.publish_dir, &cal.slug);
-    Ok(Json(json!({ "calendar": cal, "bundle": bundle.display().to_string(), "key": key })))
+    Ok(Json(
+        json!({ "calendar": cal, "bundle": bundle.display().to_string(), "key": key }),
+    ))
 }
 
-async fn unpublish_calendar(State(s): State<AppState>, Path(id): Path<Uuid>) -> Result<impl IntoResponse, ApiError> {
+async fn unpublish_calendar(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
     let mut cal = s.store.get(id).await?.ok_or_else(not_found)?;
     cal.status = CalendarStatus::Draft;
     cal.publication = None;
@@ -461,13 +539,21 @@ async fn unpublish_calendar(State(s): State<AppState>, Path(id): Path<Uuid>) -> 
 }
 
 /// Local preview of the public page, computed with the server clock.
-async fn public_view(State(s): State<AppState>, Path(slug): Path<String>) -> Result<impl IntoResponse, ApiError> {
+async fn public_view(
+    State(s): State<AppState>,
+    Path(slug): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
     let cal = s
         .store
         .all()
         .await?
         .into_iter()
         .find(|c| c.slug == slug && c.status == CalendarStatus::Published)
-        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "No published calendar with this address".into()))?;
+        .ok_or_else(|| {
+            ApiError(
+                StatusCode::NOT_FOUND,
+                "No published calendar with this address".into(),
+            )
+        })?;
     Ok(Json(public_from_calendar(&cal, Utc::now())))
 }

@@ -26,7 +26,9 @@ const BATCH_SIZE: usize = 4;
 const MAX_ATTEMPTS: u32 = 3;
 const REPAIR_ROUNDS: u32 = 2;
 
-pub const THEMES: &[&str] = &["aurora", "ember", "forest", "ocean", "candy", "mono", "arcade"];
+pub const THEMES: &[&str] = &[
+    "aurora", "ember", "forest", "ocean", "candy", "mono", "arcade",
+];
 
 // ---------------------------------------------------------------- inputs
 
@@ -48,14 +50,18 @@ impl GenerateRequest {
     pub fn validate(&self) -> Result<(), String> {
         let p = self.prompt.trim();
         if p.chars().count() < 8 {
-            return Err("Describe your calendar idea in a few words (at least 8 characters).".into());
+            return Err(
+                "Describe your calendar idea in a few words (at least 8 characters).".into(),
+            );
         }
         if p.chars().count() > 2000 {
             return Err("The prompt is too long (2000 characters max).".into());
         }
         if let Some(n) = self.entry_count {
             if n == 0 || n > MAX_ENTRIES {
-                return Err(format!("Number of entries must be between 1 and {MAX_ENTRIES}."));
+                return Err(format!(
+                    "Number of entries must be between 1 and {MAX_ENTRIES}."
+                ));
             }
         }
         Ok(())
@@ -272,7 +278,9 @@ Rules:\n\
         s.push_str(&format!("\nThe user fixed entry_count = {n}."));
     }
     if let Some(l) = &req.language {
-        s.push_str(&format!("\nThe user wants the calendar written in language: {l}."));
+        s.push_str(&format!(
+            "\nThe user wants the calendar written in language: {l}."
+        ));
     }
     s
 }
@@ -281,9 +289,19 @@ fn brief_context(b: &Brief) -> String {
     format!(
         "CALENDAR: \"{}\" — {}\nTopic: {}\nAudience: {}\nObjective: {}\nTone: {}\nDifficulty: {}\n\
 Formats: {}\nConstraints: {}\nWRITE EVERYTHING IN LANGUAGE: {}",
-        b.title, b.description, b.topic, b.audience, b.objective, b.tone, b.difficulty,
+        b.title,
+        b.description,
+        b.topic,
+        b.audience,
+        b.objective,
+        b.tone,
+        b.difficulty,
         b.content_formats.join(", "),
-        if b.requirements.is_empty() { "none".into() } else { b.requirements.join("; ") },
+        if b.requirements.is_empty() {
+            "none".into()
+        } else {
+            b.requirements.join("; ")
+        },
         b.language
     )
 }
@@ -317,7 +335,12 @@ fn entries_prompt(b: &Brief, plan: &Plan, batch: &[&PlannedEntry], free: bool) -
         .join("\n");
     let todo: String = batch
         .iter()
-        .map(|e| format!("- index {}: \"{}\" [{}] — {}", e.index, e.title, e.content_type, e.summary))
+        .map(|e| {
+            format!(
+                "- index {}: \"{}\" [{}] — {}",
+                e.index, e.title, e.content_type, e.summary
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
     format!(
@@ -355,7 +378,13 @@ async fn ask<T: for<'de> Deserialize<'de>>(
     progress: &dyn Progress,
     what: &str,
 ) -> Result<T, GenError> {
-    let req = JsonRequest { model: model.into(), system: SYSTEM.into(), prompt, schema, temperature };
+    let req = JsonRequest {
+        model: model.into(),
+        system: SYSTEM.into(),
+        prompt,
+        schema,
+        temperature,
+    };
     let mut last: Option<GenError> = None;
     for attempt in 1..=MAX_ATTEMPTS {
         match ai.generate_json(&req).await {
@@ -363,12 +392,16 @@ async fn ask<T: for<'de> Deserialize<'de>>(
                 Ok(t) => return Ok(t),
                 Err(e) => {
                     progress.log(&format!("{what}: answer did not match the expected shape (attempt {attempt}), retrying"));
-                    last = Some(GenError::Invalid(format!("Unexpected AI answer shape: {e}")));
+                    last = Some(GenError::Invalid(format!(
+                        "Unexpected AI answer shape: {e}"
+                    )));
                 }
             },
             // Unreachable provider: retrying will not help.
             Err(e @ AiError::Unreachable(_)) => return Err(e.into()),
-            Err(e @ AiError::Provider(_)) if e.to_string().contains("not found") => return Err(e.into()),
+            Err(e @ AiError::Provider(_)) if e.to_string().contains("not found") => {
+                return Err(e.into())
+            }
             Err(e) => {
                 progress.log(&format!("{what}: {e} (attempt {attempt}), retrying"));
                 last = Some(e.into());
@@ -380,7 +413,11 @@ async fn ask<T: for<'de> Deserialize<'de>>(
 
 // ---------------------------------------------------------------- normalisation & validation
 
-fn normalise_brief(mut b: Brief, req: &GenerateRequest, today: NaiveDate) -> (Brief, NaiveDate, Interval) {
+fn normalise_brief(
+    mut b: Brief,
+    req: &GenerateRequest,
+    today: NaiveDate,
+) -> (Brief, NaiveDate, Interval) {
     if b.title.trim().is_empty() {
         b.title = req.prompt.chars().take(60).collect();
     }
@@ -403,7 +440,9 @@ fn normalise_brief(mut b: Brief, req: &GenerateRequest, today: NaiveDate) -> (Br
         "monthly" => Interval::Monthly,
         _ => Interval::Daily,
     };
-    let ai_date = NaiveDate::parse_from_str(b.start_date.trim(), "%Y-%m-%d").ok().filter(|d| *d >= today);
+    let ai_date = NaiveDate::parse_from_str(b.start_date.trim(), "%Y-%m-%d")
+        .ok()
+        .filter(|d| *d >= today);
     let default_start = if interval == Interval::Monthly {
         // Monthly calendars read best starting on the 1st of next month.
         today
@@ -442,7 +481,8 @@ fn normalise_plan(mut plan: Plan, n: u32) -> Plan {
             s.title = s.focus.clone();
         }
     }
-    plan.sections.retain(|s| s.from >= 1 && s.to <= n && s.from <= s.to && meaningful(&s.title));
+    plan.sections
+        .retain(|s| s.from >= 1 && s.to <= n && s.from <= s.to && meaningful(&s.title));
     plan
 }
 
@@ -483,9 +523,7 @@ pub fn find_issues(entries: &BTreeMap<u32, GenEntry>, n: u32) -> Vec<Issue> {
         match entries.get(&i) {
             None => issues.push(Issue::Missing(i)),
             Some(e) if e.body.split_whitespace().count() < 12 => issues.push(Issue::EmptyBody(i)),
-            Some(e) if is_quiz(e) && !quiz_ok(&e.quiz) => {
-                issues.push(Issue::BadQuiz(i))
-            }
+            Some(e) if is_quiz(e) && !quiz_ok(&e.quiz) => issues.push(Issue::BadQuiz(i)),
             _ => {}
         }
     }
@@ -493,7 +531,10 @@ pub fn find_issues(entries: &BTreeMap<u32, GenEntry>, n: u32) -> Vec<Issue> {
 }
 
 fn norm_title(t: &str) -> String {
-    t.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()
+    t.to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect()
 }
 
 /// Non-blocking findings reported to the user.
@@ -510,24 +551,41 @@ pub fn find_warnings(entries: &BTreeMap<u32, GenEntry>, expected: u32) -> Vec<St
     }
     let bodies: Vec<(u32, HashSet<String>)> = entries
         .iter()
-        .map(|(i, e)| (*i, e.body.to_lowercase().split_whitespace().map(String::from).collect()))
+        .map(|(i, e)| {
+            (
+                *i,
+                e.body
+                    .to_lowercase()
+                    .split_whitespace()
+                    .map(String::from)
+                    .collect(),
+            )
+        })
         .collect();
     for w in bodies.windows(2) {
         let (a, b) = (&w[0].1, &w[1].1);
         let inter = a.intersection(b).count() as f64;
         let union = a.union(b).count().max(1) as f64;
         if inter / union > 0.6 {
-            warnings.push(format!("Entries {} and {} are very similar.", w[0].0, w[1].0));
+            warnings.push(format!(
+                "Entries {} and {} are very similar.",
+                w[0].0, w[1].0
+            ));
         }
     }
-    let types: Vec<String> = entries.values().map(|e| e.content_type.to_lowercase()).collect();
+    let types: Vec<String> = entries
+        .values()
+        .map(|e| e.content_type.to_lowercase())
+        .collect();
     let distinct: HashSet<&String> = types.iter().collect();
     if expected >= 6 && distinct.len() == 1 {
         warnings.push("All entries use the same format.".into());
     }
     let missing = find_issues(entries, expected).len();
     if missing > 0 {
-        warnings.push(format!("{missing} entries could not be fully written and are marked as to complete."));
+        warnings.push(format!(
+            "{missing} entries could not be fully written and are marked as to complete."
+        ));
     }
     warnings
 }
@@ -592,17 +650,33 @@ fn to_blocks(e: &GenEntry) -> Vec<Block> {
         });
     }
     if !e.steps.iter().all(|s| s.trim().is_empty()) || ct.contains("activity") {
-        let steps: Vec<String> = e.steps.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        let steps: Vec<String> = e
+            .steps
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
         if !steps.is_empty() {
-            blocks.push(Block::Activity { body: String::new(), steps });
+            blocks.push(Block::Activity {
+                body: String::new(),
+                steps,
+            });
         }
     }
     if !e.challenge.trim().is_empty() {
-        blocks.push(Block::Challenge { body: e.challenge.trim().into() });
+        blocks.push(Block::Challenge {
+            body: e.challenge.trim().into(),
+        });
     }
     if is_quiz(e) && quiz_ok(&e.quiz) {
-        let choices: Vec<String> = e.quiz.choices.iter().map(|c| strip_choice_label(c)).collect();
-        let answer_index = fix_quiz_answer(&choices, e.quiz.answer_index as usize, &e.quiz.explanation);
+        let choices: Vec<String> = e
+            .quiz
+            .choices
+            .iter()
+            .map(|c| strip_choice_label(c))
+            .collect();
+        let answer_index =
+            fix_quiz_answer(&choices, e.quiz.answer_index as usize, &e.quiz.explanation);
         blocks.push(Block::Quiz {
             question: e.quiz.question.trim().into(),
             choices,
@@ -611,7 +685,9 @@ fn to_blocks(e: &GenEntry) -> Vec<Block> {
         });
     }
     if !e.fact.trim().is_empty() {
-        blocks.push(Block::Fact { body: e.fact.trim().into() });
+        blocks.push(Block::Fact {
+            body: e.fact.trim().into(),
+        });
     }
     for r in &e.resources {
         let url = r.url.trim();
@@ -619,11 +695,17 @@ fn to_blocks(e: &GenEntry) -> Vec<Block> {
             continue;
         }
         // Only keep plain https links; anything else is dropped as untrusted.
-        let url = Some(url.to_string()).filter(|u| u.starts_with("https://") && u.len() < 300 && !u.contains(' '));
-        blocks.push(Block::Resource { label: r.label.trim().into(), url });
+        let url = Some(url.to_string())
+            .filter(|u| u.starts_with("https://") && u.len() < 300 && !u.contains(' '));
+        blocks.push(Block::Resource {
+            label: r.label.trim().into(),
+            url,
+        });
     }
     if !e.image_prompt.trim().is_empty() {
-        blocks.push(Block::ImagePrompt { description: e.image_prompt.trim().into() });
+        blocks.push(Block::ImagePrompt {
+            description: e.image_prompt.trim().into(),
+        });
     }
     blocks
 }
@@ -643,17 +725,39 @@ pub async fn generate_calendar(
 
     // 1. Understand
     progress.stage(Stage::Understanding, "Understanding your idea");
-    let raw: Brief = ask(ai, model, brief_prompt(req, today), brief_schema(), 0.2, progress, "Brief").await?;
+    let raw: Brief = ask(
+        ai,
+        model,
+        brief_prompt(req, today),
+        brief_schema(),
+        0.2,
+        progress,
+        "Brief",
+    )
+    .await?;
     let (brief, start, interval) = normalise_brief(raw, req, today);
     progress.brief(&brief);
     let n = brief.entry_count;
 
     // 2. Plan
     progress.stage(Stage::Planning, &format!("Planning {n} entries"));
-    let schedule = Schedule { start_date: start, interval, timezone: tz_name, unlock_time: "00:00".into() };
+    let schedule = Schedule {
+        start_date: start,
+        interval,
+        timezone: tz_name,
+        unlock_time: "00:00".into(),
+    };
     let dates: Vec<NaiveDate> = (0..n).map(|i| entry_date(&schedule, i)).collect();
-    let plan: Plan =
-        ask(ai, model, plan_prompt(&brief, &req.prompt, &dates), plan_schema(), 0.6, progress, "Plan").await?;
+    let plan: Plan = ask(
+        ai,
+        model,
+        plan_prompt(&brief, &req.prompt, &dates),
+        plan_schema(),
+        0.6,
+        progress,
+        "Plan",
+    )
+    .await?;
     let mut plan = normalise_plan(plan, n);
     fix_plan_duplicates(ai, model, &brief, &mut plan, progress).await;
     progress.plan(&plan);
@@ -664,7 +768,17 @@ pub async fn generate_calendar(
     progress.entries(0, n);
     let planned: Vec<&PlannedEntry> = plan.entries.iter().collect();
     for batch in planned.chunks(BATCH_SIZE) {
-        write_batch(ai, model, &brief, &plan, batch, false, &mut written, progress).await?;
+        write_batch(
+            ai,
+            model,
+            &brief,
+            &plan,
+            batch,
+            false,
+            &mut written,
+            progress,
+        )
+        .await?;
         progress.entries(written.len().min(n as usize) as u32, n);
     }
 
@@ -675,12 +789,30 @@ pub async fn generate_calendar(
         if issues.is_empty() {
             break;
         }
-        progress.log(&format!("Repair round {round}: {} entries to rewrite", issues.len()));
+        progress.log(&format!(
+            "Repair round {round}: {} entries to rewrite",
+            issues.len()
+        ));
         let todo: HashSet<u32> = issues.iter().map(Issue::index).collect();
-        let redo: Vec<&PlannedEntry> = plan.entries.iter().filter(|e| todo.contains(&e.index)).collect();
+        let redo: Vec<&PlannedEntry> = plan
+            .entries
+            .iter()
+            .filter(|e| todo.contains(&e.index))
+            .collect();
         for batch in redo.chunks(BATCH_SIZE) {
             // A failed repair is not fatal: the entry is flagged instead.
-            if let Err(e) = write_batch(ai, model, &brief, &plan, batch, false, &mut written, progress).await {
+            if let Err(e) = write_batch(
+                ai,
+                model,
+                &brief,
+                &plan,
+                batch,
+                false,
+                &mut written,
+                progress,
+            )
+            .await
+            {
                 progress.log(&format!("Repair failed: {e}"));
             }
         }
@@ -704,9 +836,19 @@ pub async fn generate_calendar(
             Entry {
                 id: Uuid::new_v4(),
                 index: p.index,
-                title: g.map(|g| g.title.trim()).filter(|t| !t.is_empty()).unwrap_or(&p.title).chars().take(140).collect(),
+                title: g
+                    .map(|g| g.title.trim())
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or(&p.title)
+                    .chars()
+                    .take(140)
+                    .collect(),
                 date: entry_date(&schedule, p.index - 1),
-                content_type: g.map(|g| g.content_type.trim()).filter(|t| !t.is_empty()).unwrap_or(&p.content_type).to_lowercase(),
+                content_type: g
+                    .map(|g| g.content_type.trim())
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or(&p.content_type)
+                    .to_lowercase(),
                 blocks: g.map(to_blocks).unwrap_or_default(),
                 metadata,
                 status: EntryStatus::Scheduled,
@@ -753,7 +895,13 @@ pub fn duplicate_plan_entries(plan: &Plan) -> Vec<u32> {
 
 /// Small models sometimes loop and repeat the start of the plan: ask once for
 /// fresh, distinct entries in place of the repeated ones. Never fatal.
-async fn fix_plan_duplicates(ai: &dyn AiProvider, model: &str, brief: &Brief, plan: &mut Plan, progress: &dyn Progress) {
+async fn fix_plan_duplicates(
+    ai: &dyn AiProvider,
+    model: &str,
+    brief: &Brief,
+    plan: &mut Plan,
+    progress: &dyn Progress,
+) {
     let dups = duplicate_plan_entries(plan);
     if dups.is_empty() {
         return;
@@ -763,7 +911,11 @@ async fn fix_plan_duplicates(ai: &dyn AiProvider, model: &str, brief: &Brief, pl
         .entries
         .iter()
         .map(|e| {
-            let mark = if dups.contains(&e.index) { "  <- REPLACE" } else { "" };
+            let mark = if dups.contains(&e.index) {
+                "  <- REPLACE"
+            } else {
+                ""
+            };
             format!("{}. {} ({}){mark}", e.index, e.title, e.content_type)
         })
         .collect::<Vec<_>>()
@@ -776,7 +928,17 @@ and fit the progression at its position (later entries are more advanced). Retur
         brief_context(brief),
         dups
     );
-    match ask::<Plan>(ai, model, prompt, plan_schema(), 0.8, progress, "Plan repair").await {
+    match ask::<Plan>(
+        ai,
+        model,
+        prompt,
+        plan_schema(),
+        0.8,
+        progress,
+        "Plan repair",
+    )
+    .await
+    {
         Ok(fix) => {
             for (pos, mut e) in fix.entries.into_iter().enumerate() {
                 if !dups.contains(&e.index) {
@@ -785,7 +947,10 @@ and fit the progression at its position (later entries are more advanced). Retur
                         None => continue,
                     }
                 }
-                let taken = plan.entries.iter().any(|p| p.index != e.index && norm_title(&p.title) == norm_title(&e.title));
+                let taken = plan
+                    .entries
+                    .iter()
+                    .any(|p| p.index != e.index && norm_title(&p.title) == norm_title(&e.title));
                 if !taken && !e.title.trim().is_empty() {
                     if let Some(slot) = plan.entries.iter_mut().find(|p| p.index == e.index) {
                         *slot = e;
@@ -818,7 +983,16 @@ async fn write_batch(
         batch.first().map(|e| e.index).unwrap_or(0),
         batch.last().map(|e| e.index).unwrap_or(0)
     );
-    let out: Out = ask(ai, model, entries_prompt(brief, plan, batch, free), entries_schema(), 0.7, progress, &label).await?;
+    let out: Out = ask(
+        ai,
+        model,
+        entries_prompt(brief, plan, batch, free),
+        entries_schema(),
+        0.7,
+        progress,
+        &label,
+    )
+    .await?;
     // Models sometimes renumber: map answers back to the batch by position.
     for (pos, mut e) in out.entries.into_iter().enumerate() {
         if !wanted.contains(&e.index) {
@@ -894,30 +1068,55 @@ pub async fn regenerate_entry(
             })
             .collect(),
     };
-    let summary = match (instruction.is_empty(), target.metadata.get("summary").and_then(|v| v.as_str())) {
+    let summary = match (
+        instruction.is_empty(),
+        target.metadata.get("summary").and_then(|v| v.as_str()),
+    ) {
         (false, _) => format!("USER INSTRUCTION (follow it): {instruction}"),
         (true, Some(s)) if !s.is_empty() => format!("{s} Write a fresh, better version."),
         _ => "Write a fresh, engaging version that fits the calendar.".into(),
     };
     let planned = PlannedEntry {
         index: target.index,
-        title: if target.title.trim().is_empty() { "New entry".into() } else { target.title.clone() },
+        title: if target.title.trim().is_empty() {
+            "New entry".into()
+        } else {
+            target.title.clone()
+        },
         content_type: match (instruction.is_empty(), target.content_type.trim()) {
             // Leave the format open so the instruction can change it.
-            (false, current) => format!("format of your choice to follow the instruction, currently {current}"),
+            (false, current) => {
+                format!("format of your choice to follow the instruction, currently {current}")
+            }
             (true, "") => "text".into(),
             (true, current) => current.into(),
         },
         summary,
     };
-    let fallback_type = if target.content_type.trim().is_empty() { "text".to_string() } else { target.content_type.clone() };
+    let fallback_type = if target.content_type.trim().is_empty() {
+        "text".to_string()
+    } else {
+        target.content_type.clone()
+    };
     let progress = NoopProgress;
     let mut written = BTreeMap::new();
     for _ in 0..2 {
-        write_batch(ai, model, &brief, &plan, &[&planned], !instruction.is_empty(), &mut written, &progress).await?;
-        if find_issues(&written, 0).is_empty() && written.get(&planned.index).is_some_and(|g| {
-            g.body.split_whitespace().count() >= 12 && (!is_quiz(g) || quiz_ok(&g.quiz))
-        }) {
+        write_batch(
+            ai,
+            model,
+            &brief,
+            &plan,
+            &[&planned],
+            !instruction.is_empty(),
+            &mut written,
+            &progress,
+        )
+        .await?;
+        if find_issues(&written, 0).is_empty()
+            && written.get(&planned.index).is_some_and(|g| {
+                g.body.split_whitespace().count() >= 12 && (!is_quiz(g) || quiz_ok(&g.quiz))
+            })
+        {
             break;
         }
     }
@@ -927,7 +1126,11 @@ pub async fn regenerate_entry(
     let mut metadata = target.metadata.clone();
     metadata.remove("needs_review");
     // An instruction may legitimately change the title and format.
-    let title = if g.title.trim().is_empty() { planned.title.clone() } else { clip_chars(g.title.trim(), 140) };
+    let title = if g.title.trim().is_empty() {
+        planned.title.clone()
+    } else {
+        clip_chars(g.title.trim(), 140)
+    };
     let content_type = match g.content_type.trim() {
         t if t.is_empty() || t.len() > 40 => fallback_type,
         t => t.to_lowercase(),
@@ -982,7 +1185,8 @@ mod tests {
     }
 
     fn long_body(i: u32) -> String {
-        format!("Entry {i} body. ") + &"This is meaningful generated content for the reader. ".repeat(3)
+        format!("Entry {i} body. ")
+            + &"This is meaningful generated content for the reader. ".repeat(3)
     }
 
     #[async_trait::async_trait]
@@ -1013,7 +1217,9 @@ mod tests {
                 let entries: Vec<Value> = (1..self.count)
                     .map(|i| json!({"index": i, "title": format!("Title {i}"), "content_type": if i % 2 == 0 {"quiz"} else {"fact"}, "summary": "s"}))
                     .collect();
-                return Ok(json!({ "sections": [{"title":"All","from":1,"to":self.count,"focus":"f"}], "entries": entries }));
+                return Ok(
+                    json!({ "sections": [{"title":"All","from":1,"to":self.count,"focus":"f"}], "entries": entries }),
+                );
             }
             if self.fail_first_entries && *calls == 3 {
                 return Err(AiError::Timeout);
@@ -1044,9 +1250,18 @@ mod tests {
 
     #[tokio::test]
     async fn full_pipeline_builds_valid_calendar() {
-        let ai = FakeAi { count: 10, calls: Mutex::new(0), fail_first_entries: true };
-        let req = GenerateRequest { prompt: "A 10-day test calendar".into(), ..Default::default() };
-        let cal = generate_calendar(&ai, "m", &req, &NoProgress).await.unwrap();
+        let ai = FakeAi {
+            count: 10,
+            calls: Mutex::new(0),
+            fail_first_entries: true,
+        };
+        let req = GenerateRequest {
+            prompt: "A 10-day test calendar".into(),
+            ..Default::default()
+        };
+        let cal = generate_calendar(&ai, "m", &req, &NoProgress)
+            .await
+            .unwrap();
         assert_eq!(cal.entries.len(), 10);
         assert_eq!(cal.theme, "aurora", "unknown theme falls back");
         // Dates are consecutive and computed by the engine.
@@ -1056,28 +1271,79 @@ mod tests {
         // The entry missing from the plan was still written.
         assert!(!cal.entries[9].blocks.is_empty());
         // Quizzes are typed, unsafe links are removed.
-        assert!(cal.entries[1].blocks.iter().any(|b| matches!(b, Block::Quiz { answer_index: 1, .. })));
-        assert!(cal.entries.iter().flat_map(|e| &e.blocks).all(|b| !matches!(b, Block::Resource { url: Some(_), .. })));
+        assert!(cal.entries[1].blocks.iter().any(|b| matches!(
+            b,
+            Block::Quiz {
+                answer_index: 1,
+                ..
+            }
+        )));
+        assert!(cal
+            .entries
+            .iter()
+            .flat_map(|e| &e.blocks)
+            .all(|b| !matches!(b, Block::Resource { url: Some(_), .. })));
     }
 
     #[test]
     fn issues_detect_missing_empty_and_bad_quiz() {
         let mut m = BTreeMap::new();
-        m.insert(1, GenEntry { index: 1, title: "a".into(), content_type: "fact".into(), body: long_body(1), ..Default::default() });
-        m.insert(2, GenEntry { index: 2, title: "b".into(), content_type: "fact".into(), body: "too short".into(), ..Default::default() });
-        m.insert(3, GenEntry {
-            index: 3, title: "c".into(), content_type: "quiz".into(), body: long_body(3),
-            quiz: GenQuiz { question: "Q".into(), choices: vec!["x".into()], answer_index: 4, explanation: "".into() },
-            ..Default::default()
-        });
-        assert_eq!(find_issues(&m, 4), vec![Issue::EmptyBody(2), Issue::BadQuiz(3), Issue::Missing(4)]);
+        m.insert(
+            1,
+            GenEntry {
+                index: 1,
+                title: "a".into(),
+                content_type: "fact".into(),
+                body: long_body(1),
+                ..Default::default()
+            },
+        );
+        m.insert(
+            2,
+            GenEntry {
+                index: 2,
+                title: "b".into(),
+                content_type: "fact".into(),
+                body: "too short".into(),
+                ..Default::default()
+            },
+        );
+        m.insert(
+            3,
+            GenEntry {
+                index: 3,
+                title: "c".into(),
+                content_type: "quiz".into(),
+                body: long_body(3),
+                quiz: GenQuiz {
+                    question: "Q".into(),
+                    choices: vec!["x".into()],
+                    answer_index: 4,
+                    explanation: "".into(),
+                },
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            find_issues(&m, 4),
+            vec![Issue::EmptyBody(2), Issue::BadQuiz(3), Issue::Missing(4)]
+        );
     }
 
     #[test]
     fn warnings_detect_duplicates() {
         let mut m = BTreeMap::new();
         for i in 1..=2 {
-            m.insert(i, GenEntry { index: i, title: "Same Title!".into(), content_type: "fact".into(), body: long_body(0), ..Default::default() });
+            m.insert(
+                i,
+                GenEntry {
+                    index: i,
+                    title: "Same Title!".into(),
+                    content_type: "fact".into(),
+                    body: long_body(0),
+                    ..Default::default()
+                },
+            );
         }
         let w = find_warnings(&m, 2);
         assert!(w.iter().any(|x| x.contains("same title")));
@@ -1091,7 +1357,8 @@ mod tests {
             "Held at McNichols Sports Arena in Denver, Colorado".into(),
             "Cancelled".into(),
         ];
-        let exp = "UFC 1 was held on November 12, 1993, at McNichols Sports Arena in Denver, Colorado.";
+        let exp =
+            "UFC 1 was held on November 12, 1993, at McNichols Sports Arena in Denver, Colorado.";
         assert_eq!(fix_quiz_answer(&c, 0, exp), 1);
         // Correct index is left alone; vague explanations change nothing.
         assert_eq!(fix_quiz_answer(&c, 1, exp), 1);
@@ -1110,15 +1377,44 @@ mod tests {
 
     #[test]
     fn plan_duplicates_are_found() {
-        let e = |i: u32, t: &str| PlannedEntry { index: i, title: t.into(), content_type: "x".into(), summary: "".into() };
-        let plan = Plan { sections: vec![], entries: vec![e(1, "Intro"), e(2, "Loops"), e(3, "intro!"), e(4, "Entry 4")] };
+        let e = |i: u32, t: &str| PlannedEntry {
+            index: i,
+            title: t.into(),
+            content_type: "x".into(),
+            summary: "".into(),
+        };
+        let plan = Plan {
+            sections: vec![],
+            entries: vec![
+                e(1, "Intro"),
+                e(2, "Loops"),
+                e(3, "intro!"),
+                e(4, "Entry 4"),
+            ],
+        };
         assert_eq!(duplicate_plan_entries(&plan), vec![3, 4]);
     }
 
     #[test]
     fn request_validation() {
-        assert!(GenerateRequest { prompt: "short".into(), ..Default::default() }.validate().is_err());
-        assert!(GenerateRequest { prompt: "A long enough prompt".into(), entry_count: Some(500), ..Default::default() }.validate().is_err());
-        assert!(GenerateRequest { prompt: "A long enough prompt".into(), ..Default::default() }.validate().is_ok());
+        assert!(GenerateRequest {
+            prompt: "short".into(),
+            ..Default::default()
+        }
+        .validate()
+        .is_err());
+        assert!(GenerateRequest {
+            prompt: "A long enough prompt".into(),
+            entry_count: Some(500),
+            ..Default::default()
+        }
+        .validate()
+        .is_err());
+        assert!(GenerateRequest {
+            prompt: "A long enough prompt".into(),
+            ..Default::default()
+        }
+        .validate()
+        .is_ok());
     }
 }

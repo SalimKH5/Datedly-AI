@@ -17,7 +17,10 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { ollama_endpoint: "http://localhost:11434".into(), model: None }
+        Settings {
+            ollama_endpoint: "http://localhost:11434".into(),
+            model: None,
+        }
     }
 }
 
@@ -99,6 +102,10 @@ impl Store {
     }
 
     pub async fn save_settings(&self, s: &Settings) -> std::io::Result<()> {
-        fs::write(self.root.join("settings.json"), serde_json::to_vec_pretty(s)?).await
+        fs::write(
+            self.root.join("settings.json"),
+            serde_json::to_vec_pretty(s)?,
+        )
+        .await
     }
 }

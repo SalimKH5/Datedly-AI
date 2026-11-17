@@ -25,7 +25,11 @@ impl Ollama {
             .timeout(Duration::from_secs(GENERATION_TIMEOUT_SECS))
             .build()
             .expect("http client");
-        Ollama { endpoint: endpoint.trim_end_matches('/').to_string(), http, gen_http }
+        Ollama {
+            endpoint: endpoint.trim_end_matches('/').to_string(),
+            http,
+            gen_http,
+        }
     }
 
     fn map_err(&self, e: reqwest::Error) -> AiError {
@@ -95,7 +99,10 @@ impl AiProvider for Ollama {
         if !res.status().is_success() {
             return Err(AiError::Provider(format!("HTTP {}", res.status())));
         }
-        let tags: TagsResponse = res.json().await.map_err(|e| AiError::Provider(e.to_string()))?;
+        let tags: TagsResponse = res
+            .json()
+            .await
+            .map_err(|e| AiError::Provider(e.to_string()))?;
         let mut models: Vec<ModelInfo> = tags
             .models
             .into_iter()

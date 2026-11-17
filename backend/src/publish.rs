@@ -95,7 +95,8 @@ impl MasterKey {
         let hk = Hkdf::<Sha256>::new(Some(b"datedly-v1"), &self.0);
         let mut okm = [0u8; 32];
         let info = format!("entry:{calendar_id}:{index}");
-        hk.expand(info.as_bytes(), &mut okm).expect("32 bytes is a valid HKDF length");
+        hk.expand(info.as_bytes(), &mut okm)
+            .expect("32 bytes is a valid HKDF length");
         Aes256Gcm::new_from_slice(&okm).expect("32-byte key")
     }
 }
@@ -163,17 +164,36 @@ pub fn seal(cal: &Calendar, key: &MasterKey) -> Result<Bundle, PublishError> {
     let times = unlock_times(cal);
     let mut entries = Vec::with_capacity(cal.entries.len());
     for (e, unlock_at) in cal.entries.iter().zip(times) {
-        let content = EntryContent { title: e.title.clone(), content_type: e.content_type.clone(), blocks: e.blocks.clone() };
+        let content = EntryContent {
+            title: e.title.clone(),
+            content_type: e.content_type.clone(),
+            blocks: e.blocks.clone(),
+        };
         let plain = serde_json::to_vec(&content)?;
         let mut nonce = [0u8; 12];
         rand::rngs::OsRng.fill_bytes(&mut nonce);
         let ct = key
             .entry_cipher(cal.id, e.index)
-            .encrypt(Nonce::from_slice(&nonce), Payload { msg: &plain, aad: &aad(cal.id, e.index) })
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: &plain,
+                    aad: &aad(cal.id, e.index),
+                },
+            )
             .expect("AES-GCM encryption cannot fail with a valid key");
-        entries.push(SealedEntry { index: e.index, date: e.date, unlock_at, nonce: B64.encode(nonce), ciphertext: B64.encode(ct) });
+        entries.push(SealedEntry {
+            index: e.index,
+            date: e.date,
+            unlock_at,
+            nonce: B64.encode(nonce),
+            ciphertext: B64.encode(ct),
+        });
     }
-    let publication = cal.publication.clone().unwrap_or(Publication { published_at: Utc::now(), demo: None });
+    let publication = cal.publication.clone().unwrap_or(Publication {
+        published_at: Utc::now(),
+        demo: None,
+    });
     Ok(Bundle {
         version: 1,
         calendar_id: cal.id,
@@ -189,7 +209,11 @@ pub fn seal(cal: &Calendar, key: &MasterKey) -> Result<Bundle, PublishError> {
     })
 }
 
-pub fn open_entry(bundle: &Bundle, sealed: &SealedEntry, key: &MasterKey) -> Result<EntryContent, PublishError> {
+pub fn open_entry(
+    bundle: &Bundle,
+    sealed: &SealedEntry,
+    key: &MasterKey,
+) -> Result<EntryContent, PublishError> {
     let err = || PublishError::Decrypt(sealed.index);
     let nonce = B64.decode(&sealed.nonce).map_err(|_| err())?;
     let ct = B64.decode(&sealed.ciphertext).map_err(|_| err())?;
@@ -198,7 +222,13 @@ pub fn open_entry(bundle: &Bundle, sealed: &SealedEntry, key: &MasterKey) -> Res
     }
     let plain = key
         .entry_cipher(bundle.calendar_id, sealed.index)
-        .decrypt(Nonce::from_slice(&nonce), Payload { msg: &ct, aad: &aad(bundle.calendar_id, sealed.index) })
+        .decrypt(
+            Nonce::from_slice(&nonce),
+            Payload {
+                msg: &ct,
+                aad: &aad(bundle.calendar_id, sealed.index),
+            },
+        )
         .map_err(|_| err())?;
     Ok(serde_json::from_slice(&plain)?)
 }
@@ -233,12 +263,26 @@ pub struct PublicEntry {
 }
 
 /// Builds the public view from a bundle: only entries whose time has come are decrypted.
-pub fn public_from_bundle(bundle: &Bundle, key: &MasterKey, now: DateTime<Utc>) -> Result<PublicCalendar, PublishError> {
+pub fn public_from_bundle(
+    bundle: &Bundle,
+    key: &MasterKey,
+    now: DateTime<Utc>,
+) -> Result<PublicCalendar, PublishError> {
     let mut entries = Vec::with_capacity(bundle.entries.len());
     for s in &bundle.entries {
         let unlocked = now >= s.unlock_at;
-        let content = if unlocked { Some(open_entry(bundle, s, key)?) } else { None };
-        entries.push(PublicEntry { index: s.index, date: s.date, unlock_at: s.unlock_at, unlocked, content });
+        let content = if unlocked {
+            Some(open_entry(bundle, s, key)?)
+        } else {
+            None
+        };
+        entries.push(PublicEntry {
+            index: s.index,
+            date: s.date,
+            unlock_at: s.unlock_at,
+            unlocked,
+            content,
+        });
     }
     Ok(finish(
         bundle.slug.clone(),
@@ -266,7 +310,11 @@ pub fn public_from_calendar(cal: &Calendar, now: DateTime<Utc>) -> PublicCalenda
                 date: e.date,
                 unlock_at,
                 unlocked,
-                content: unlocked.then(|| EntryContent { title: e.title.clone(), content_type: e.content_type.clone(), blocks: e.blocks.clone() }),
+                content: unlocked.then(|| EntryContent {
+                    title: e.title.clone(),
+                    content_type: e.content_type.clone(),
+                    blocks: e.blocks.clone(),
+                }),
             }
         })
         .collect();
@@ -297,7 +345,11 @@ fn finish(
 ) -> PublicCalendar {
     entries.sort_by_key(|e| e.index);
     let unlocked_count = entries.iter().filter(|e| e.unlocked).count();
-    let next_unlock_at = entries.iter().filter(|e| !e.unlocked).map(|e| e.unlock_at).min();
+    let next_unlock_at = entries
+        .iter()
+        .filter(|e| !e.unlocked)
+        .map(|e| e.unlock_at)
+        .min();
     PublicCalendar {
         slug,
         title,
@@ -349,7 +401,9 @@ mod tests {
                 title: format!("Secret {i}"),
                 date: NaiveDate::from_ymd_opt(2026, 12, i).unwrap(),
                 content_type: "fact".into(),
-                blocks: vec![Block::Text { body: format!("Surprise number {i}") }],
+                blocks: vec![Block::Text {
+                    body: format!("Surprise number {i}"),
+                }],
                 metadata: Default::default(),
                 status: EntryStatus::Scheduled,
             })
@@ -371,7 +425,10 @@ mod tests {
             status: CalendarStatus::Published,
             entries,
             generation: None,
-            publication: Some(Publication { published_at: Utc::now(), demo }),
+            publication: Some(Publication {
+                published_at: Utc::now(),
+                demo,
+            }),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -383,7 +440,10 @@ mod tests {
         let c = cal(None);
         let bundle = seal(&c, &key).unwrap();
         let raw = serde_json::to_string(&bundle).unwrap();
-        assert!(!raw.contains("Secret") && !raw.contains("Surprise"), "no clear text in the bundle");
+        assert!(
+            !raw.contains("Secret") && !raw.contains("Surprise"),
+            "no clear text in the bundle"
+        );
 
         // Dec 2, 00:30 in Paris: entries 1 and 2 are open, 3 is not.
         let now = Utc.with_ymd_and_hms(2026, 12, 1, 23, 30, 0).unwrap();
@@ -394,14 +454,20 @@ mod tests {
         let public_json = serde_json::to_string(&view).unwrap();
         assert!(!public_json.contains("Secret 3") && !public_json.contains("Surprise number 3"));
         // Next unlock: Dec 3 midnight Paris = Dec 2 23:00 UTC.
-        assert_eq!(view.next_unlock_at, Some(Utc.with_ymd_and_hms(2026, 12, 2, 23, 0, 0).unwrap()));
+        assert_eq!(
+            view.next_unlock_at,
+            Some(Utc.with_ymd_and_hms(2026, 12, 2, 23, 0, 0).unwrap())
+        );
     }
 
     #[test]
     fn wrong_key_is_refused() {
         let bundle = seal(&cal(None), &MasterKey::generate()).unwrap();
         let now = Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap();
-        assert!(matches!(public_from_bundle(&bundle, &MasterKey::generate(), now), Err(PublishError::Decrypt(1))));
+        assert!(matches!(
+            public_from_bundle(&bundle, &MasterKey::generate(), now),
+            Err(PublishError::Decrypt(1))
+        ));
     }
 
     #[test]
@@ -417,7 +483,10 @@ mod tests {
     #[test]
     fn demo_mode_unlocks_every_n_minutes() {
         let start = Utc.with_ymd_and_hms(2026, 11, 16, 20, 0, 0).unwrap();
-        let c = cal(Some(Demo { start, every_minutes: 5 }));
+        let c = cal(Some(Demo {
+            start,
+            every_minutes: 5,
+        }));
         let view = public_from_calendar(&c, start + Duration::minutes(6));
         assert_eq!(view.unlocked_count, 2);
         assert!(view.demo);

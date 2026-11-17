@@ -26,7 +26,11 @@ pub fn sanitize_calendar(cal: &mut Calendar) -> Result<(), String> {
         return Err("The calendar needs a title.".into());
     }
     cal.description = clip(&cal.description, 1_000);
-    cal.slug = slugify(if cal.slug.trim().is_empty() { &cal.title } else { &cal.slug });
+    cal.slug = slugify(if cal.slug.trim().is_empty() {
+        &cal.title
+    } else {
+        &cal.slug
+    });
     if !THEMES.contains(&cal.theme.as_str()) {
         cal.theme = "aurora".into();
     }
@@ -37,7 +41,9 @@ pub fn sanitize_calendar(cal: &mut Calendar) -> Result<(), String> {
         return Err("Unlock time must look like 08:30.".into());
     }
     if cal.entries.len() > MAX_ENTRIES {
-        return Err(format!("A calendar can have at most {MAX_ENTRIES} entries."));
+        return Err(format!(
+            "A calendar can have at most {MAX_ENTRIES} entries."
+        ));
     }
 
     // Order is the editor's order; indexes are always 1..n.
@@ -55,38 +61,79 @@ pub fn sanitize_calendar(cal: &mut Calendar) -> Result<(), String> {
         let mut blocks = Vec::with_capacity(e.blocks.len());
         for b in e.blocks.drain(..) {
             let b = match b {
-                Block::Text { body } => Block::Text { body: clip(&body, MAX_TEXT) },
-                Block::Fact { body } => Block::Fact { body: clip(&body, MAX_TEXT) },
-                Block::Story { body } => Block::Story { body: clip(&body, MAX_TEXT) },
-                Block::Challenge { body } => Block::Challenge { body: clip(&body, MAX_TEXT) },
+                Block::Text { body } => Block::Text {
+                    body: clip(&body, MAX_TEXT),
+                },
+                Block::Fact { body } => Block::Fact {
+                    body: clip(&body, MAX_TEXT),
+                },
+                Block::Story { body } => Block::Story {
+                    body: clip(&body, MAX_TEXT),
+                },
+                Block::Challenge { body } => Block::Challenge {
+                    body: clip(&body, MAX_TEXT),
+                },
                 Block::Activity { body, steps } => Block::Activity {
                     body: clip(&body, MAX_TEXT),
-                    steps: steps.iter().map(|s| clip(s, 1_000)).filter(|s| !s.is_empty()).take(30).collect(),
+                    steps: steps
+                        .iter()
+                        .map(|s| clip(s, 1_000))
+                        .filter(|s| !s.is_empty())
+                        .take(30)
+                        .collect(),
                 },
-                Block::Quiz { question, choices, answer_index, explanation } => {
-                    let choices: Vec<String> =
-                        choices.iter().map(|c| clip(c, 300)).filter(|c| !c.is_empty()).take(8).collect();
+                Block::Quiz {
+                    question,
+                    choices,
+                    answer_index,
+                    explanation,
+                } => {
+                    let choices: Vec<String> = choices
+                        .iter()
+                        .map(|c| clip(c, 300))
+                        .filter(|c| !c.is_empty())
+                        .take(8)
+                        .collect();
                     let question = clip(&question, 1_000);
                     if question.is_empty() || choices.len() < 2 {
-                        return Err(format!("The quiz of entry {} needs a question and at least 2 answers.", i + 1));
+                        return Err(format!(
+                            "The quiz of entry {} needs a question and at least 2 answers.",
+                            i + 1
+                        ));
                     }
                     if answer_index >= choices.len() {
-                        return Err(format!("The quiz of entry {} has no correct answer selected.", i + 1));
+                        return Err(format!(
+                            "The quiz of entry {} has no correct answer selected.",
+                            i + 1
+                        ));
                     }
                     Block::Quiz {
                         question,
                         choices,
                         answer_index,
-                        explanation: explanation.map(|x| clip(&x, 1_000)).filter(|x| !x.is_empty()),
+                        explanation: explanation
+                            .map(|x| clip(&x, 1_000))
+                            .filter(|x| !x.is_empty()),
                     }
                 }
-                Block::Resource { label, url } => Block::Resource { label: clip(&label, 200), url: safe_url(&url) },
-                Block::ImagePrompt { description } => Block::ImagePrompt { description: clip(&description, 1_000) },
-                Block::Custom { label, data } => Block::Custom { label: clip(&label, 80), data },
+                Block::Resource { label, url } => Block::Resource {
+                    label: clip(&label, 200),
+                    url: safe_url(&url),
+                },
+                Block::ImagePrompt { description } => Block::ImagePrompt {
+                    description: clip(&description, 1_000),
+                },
+                Block::Custom { label, data } => Block::Custom {
+                    label: clip(&label, 80),
+                    data,
+                },
             };
             // Drop blocks left empty in the editor.
             let empty = match &b {
-                Block::Text { body } | Block::Fact { body } | Block::Story { body } | Block::Challenge { body } => body.is_empty(),
+                Block::Text { body }
+                | Block::Fact { body }
+                | Block::Story { body }
+                | Block::Challenge { body } => body.is_empty(),
                 Block::Activity { body, steps } => body.is_empty() && steps.is_empty(),
                 Block::Resource { label, .. } => label.is_empty(),
                 Block::ImagePrompt { description } => description.is_empty(),
@@ -148,13 +195,31 @@ mod tests {
     #[test]
     fn renumbers_cleans_and_drops_unsafe_links() {
         let mut c = cal(vec![
-            entry(7, vec![Block::Text { body: "  ".into() }, Block::Resource { label: "x".into(), url: Some("javascript:alert(1)".into()) }]),
+            entry(
+                7,
+                vec![
+                    Block::Text { body: "  ".into() },
+                    Block::Resource {
+                        label: "x".into(),
+                        url: Some("javascript:alert(1)".into()),
+                    },
+                ],
+            ),
             entry(3, vec![]),
         ]);
         sanitize_calendar(&mut c).unwrap();
-        assert_eq!(c.entries.iter().map(|e| e.index).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            c.entries.iter().map(|e| e.index).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
         assert_eq!(c.entries[0].title, "Title 3");
-        assert_eq!(c.entries[1].blocks, vec![Block::Resource { label: "x".into(), url: None }]);
+        assert_eq!(
+            c.entries[1].blocks,
+            vec![Block::Resource {
+                label: "x".into(),
+                url: None
+            }]
+        );
         assert_eq!(c.theme, "aurora");
         assert_eq!(c.slug, "my-calendar");
         assert_eq!(c.entries[0].content_type, "quiz");
@@ -162,7 +227,12 @@ mod tests {
 
     #[test]
     fn rejects_broken_quiz_and_empty_title() {
-        let quiz = Block::Quiz { question: "Q?".into(), choices: vec!["a".into(), "b".into()], answer_index: 5, explanation: None };
+        let quiz = Block::Quiz {
+            question: "Q?".into(),
+            choices: vec!["a".into(), "b".into()],
+            answer_index: 5,
+            explanation: None,
+        };
         let mut c = cal(vec![entry(1, vec![quiz])]);
         assert!(sanitize_calendar(&mut c).is_err());
         let mut c = cal(vec![]);

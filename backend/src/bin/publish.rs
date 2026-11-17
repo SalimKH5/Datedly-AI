@@ -18,7 +18,9 @@ use serde_json::json;
 
 fn arg(name: &str) -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
-    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1).cloned())
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1).cloned())
 }
 
 fn main() -> ExitCode {
@@ -79,10 +81,20 @@ fn run() -> Result<String, Box<dyn std::error::Error>> {
             })
         })
         .collect();
-    std::fs::write(out.join("index.json"), serde_json::to_vec(&json!({ "generated_at": now, "calendars": index }))?)?;
+    std::fs::write(
+        out.join("index.json"),
+        serde_json::to_vec(&json!({ "generated_at": now, "calendars": index }))?,
+    )?;
     std::fs::write(out.join("state.txt"), state_fingerprint(&views))?;
 
     // Counts only: content never goes to the logs.
-    let summary: Vec<String> = views.iter().map(|v| format!("{} {}/{}", v.slug, v.unlocked_count, v.entry_count)).collect();
-    Ok(format!("Published {} calendar(s) at {now}: {}", views.len(), summary.join(", ")))
+    let summary: Vec<String> = views
+        .iter()
+        .map(|v| format!("{} {}/{}", v.slug, v.unlocked_count, v.entry_count))
+        .collect();
+    Ok(format!(
+        "Published {} calendar(s) at {now}: {}",
+        views.len(),
+        summary.join(", ")
+    ))
 }

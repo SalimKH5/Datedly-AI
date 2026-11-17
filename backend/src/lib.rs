@@ -3,7 +3,7 @@ pub mod api;
 pub mod generate;
 pub mod jobs;
 pub mod models;
+pub mod publish;
 pub mod schedule;
 pub mod store;
 pub mod validate;
-pub mod publish;
