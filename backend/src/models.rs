@@ -16,20 +16,15 @@ pub enum CalendarStatus {
     Published,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Interval {
+    #[default]
     Daily,
     Weekly,
     Monthly,
     /// Every `days` days.
     EveryNDays { days: u32 },
-}
-
-impl Default for Interval {
-    fn default() -> Self {
-        Interval::Daily
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

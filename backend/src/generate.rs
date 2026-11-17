@@ -482,7 +482,7 @@ pub fn find_issues(entries: &BTreeMap<u32, GenEntry>, n: u32) -> Vec<Issue> {
     for i in 1..=n {
         match entries.get(&i) {
             None => issues.push(Issue::Missing(i)),
-            Some(e) if e.body.trim().split_whitespace().count() < 12 => issues.push(Issue::EmptyBody(i)),
+            Some(e) if e.body.split_whitespace().count() < 12 => issues.push(Issue::EmptyBody(i)),
             Some(e) if is_quiz(e) && !quiz_ok(&e.quiz) => {
                 issues.push(Issue::BadQuiz(i))
             }
@@ -797,6 +797,7 @@ and fit the progression at its position (later entries are more advanced). Retur
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn write_batch(
     ai: &dyn AiProvider,
     model: &str,
